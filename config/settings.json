@@ -1,0 +1,65 @@
+{
+  "app": {
+    "name": "PDF File Renamer",
+    "version": "1.0.0",
+    "debug": false
+  },
+  "dify": {
+    "api_url": "https://api.dify.ai/v1/workflows/YOUR_WORKFLOW_ID/run",
+    "api_key": "YOUR_DIFY_API_KEY",
+    "upload_url": "https://api.dify.ai/v1/files/upload",
+    "workflow_file": "./dify_config/医療書類管理notion_practical.yml",
+    "user_id": "pdf-renamer-user"
+  },
+  "file_processing": {
+    "input_folder": "./input_pdfs",
+    "output_folder": "./downloads",
+    "temp_folder": "./temp",
+    "max_file_size_mb": 15,
+    "allowed_extensions": [".pdf", ".PDF"]
+  },
+  "naming_rules": {
+    "pattern": "{date}_{issuer}_{document_type}",
+    "date_format": "%Y%m%d",
+    "max_filename_length": 255,
+    "invalid_chars": ["<", ">", ":", "\"", "/", "\\", "|", "?", "*"],
+    "replacement_char": "_",
+    "use_japanese_names": true
+  },
+  "issuers": {
+    "国民健康保険団体連合会": "国民健康保険団体連合会",
+    "社会保険診療報酬支払基金": "社会保険診療報酬支払基金",
+    "厚生労働省": "厚生労働省",
+    "保険者": "保険者",
+    "医療機関": "医療機関",
+    "その他": "その他"
+  },
+  "document_types": {
+    "診療報酬明細書": "診療報酬明細書",
+    "医療費通知": "医療費通知",
+    "保険証": "保険証",
+    "診断書": "診断書",
+    "処方箋": "処方箋",
+    "返戻内訳書": "返戻内訳書",
+    "増減点連絡書": "増減点連絡書",
+    "過誤・再審査結果通知書": "過誤・再審査結果通知書",
+    "保険過誤調整結果通知書": "保険過誤調整結果通知書",
+    "資格確認結果連絡書": "資格確認結果連絡書",
+    "当座口振込通知書": "当座口振込通知書",
+    "その他": "その他"
+  },
+  "google_drive": {
+    "enabled": false,
+    "credentials_file": "./credentials.json",
+    "token_file": "./token.json",
+    "folder_id": "",
+    "folder_name": "PDF_Renamed_Files",
+    "create_date_folders": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "./logs/app.log",
+    "max_file_size_mb": 10,
+    "backup_count": 5
+  }
+}
