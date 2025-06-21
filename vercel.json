@@ -4,6 +4,10 @@
     {
       "src": "api/main.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -15,14 +19,5 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ],
-  "functions": {
-    "api/main.py": {
-      "maxDuration": 300
-    }
-  },
-  "env": {
-    "DIFY_API_KEY": "@dify_api_key",
-    "DIFY_API_URL": "@dify_api_url"
-  }
+  ]
 }
