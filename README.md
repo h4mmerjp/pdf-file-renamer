@@ -26,10 +26,9 @@ PDF ファイルを AI で自動分析してリネームする Web アプリケ�
 
 ### バックエンド
 
-- **FastAPI**: Python の Web フレームワーク
+- **Node.js**: サーバーレス関数
+- **Vercel Functions**: デプロイプラットフォーム
 - **Dify API**: AI 処理エンジン
-- **PyPDF2**: PDF 処理
-- **pdfplumber**: PDF テキスト抽出
 
 ### フロントエンド
 
@@ -41,7 +40,7 @@ PDF ファイルを AI で自動分析してリネームする Web アプリケ�
 - **Vercel**: サーバーレスデプロイ
 - **GitHub**: ソースコード管理
 
-## 🔧 セットアップ
+## 🔧 ローカル開発
 
 ### 1. リポジトリのクローン
 
@@ -53,12 +52,12 @@ cd pdf-file-renamer
 ### 2. 依存関係のインストール
 
 ```bash
-pip install -r requirements.txt
+npm install
 ```
 
 ### 3. 環境変数の設定
 
-`config/.env` ファイルを作成:
+Vercel ダッシュボードで以下の環境変数を設定:
 
 ```env
 DIFY_API_KEY=your_dify_api_key_here
@@ -68,63 +67,39 @@ DIFY_API_URL=https://api.dify.ai/v1/workflows/run
 ### 4. ローカル実行
 
 ```bash
-python api/main.py
+vercel dev
 ```
 
-ブラウザで `http://localhost:8000` にアクセス
+ブラウザで `http://localhost:3000` にアクセス
 
-## 🌐 Vercel デプロイ
+## 🌐 本番デプロイ
 
-### 1. GitHub リポジトリにプッシュ
+### 1. GitHub にプッシュ
 
 ```bash
 git add .
-git commit -m "Initial commit"
+git commit -m "Deploy to production"
 git push origin main
 ```
 
-### 2. Vercel でプロジェクトインポート
+### 2. Vercel で自動デプロイ
 
-1. [Vercel](https://vercel.com) にログイン
-2. "New Project" をクリック
-3. GitHub リポジトリを選択
-4. プロジェクト設定:
-   - Framework Preset: Other
-   - Build Command: (空白)
-   - Output Directory: (空白)
-   - Install Command: `pip install -r requirements.txt`
-
-### 3. 環境変数の設定
-
-Vercel ダッシュボードで以下の環境変数を設定:
-
-- `DIFY_API_KEY`: あなたの Dify API キー
-- `DIFY_API_URL`: Dify ワークフローのエンドポイント
-
-### 4. デプロイ
-
-設定完了後、自動的にデプロイが開始されます。
+GitHub と連携済みの場合、プッシュ時に自動デプロイされます。
 
 ## 📁 プロジェクト構造
 
 ```
 pdf-file-renamer/
 ├── api/
-│   └── main.py              # FastAPI メインアプリケーション
-├── src/
-│   ├── __init__.py
-│   ├── dify_client.py       # Dify API クライアント
-│   └── file_renamer.py      # ファイルリネーム機能
-├── config/
-│   ├── settings.json        # アプリケーション設定
-│   └── .env                 # 環境変数（秘匿情報）
-├── dify_config/
-│   └── *.yml               # Difyワークフロー設定
-├── index.html              # フロントエンド
-├── vercel.json             # Vercel設定
-├── requirements.txt        # Python依存関係
-├── .gitignore             # Git除外設定
-└── README.md              # このファイル
+│   ├── hello.js          # 基本動作確認API
+│   ├── health.js         # ヘルスチェックAPI
+│   ├── test-dify.js      # Dify接続テストAPI
+│   └── process.js        # PDF処理API（実装予定）
+├── index.html            # メインフロントエンド
+├── package.json          # Node.js依存関係
+├── vercel.json          # Vercel設定
+├── .gitignore           # Git除外設定
+└── README.md            # このファイル
 ```
 
 ## 🔑 Dify 設定
@@ -153,30 +128,26 @@ pdf-file-renamer/
 
 ### 基本情報
 
+- `GET /api/hello` - 動作確認
 - `GET /api/health` - ヘルスチェック
-- `GET /api/` - API 情報
+- `GET /api/test-dify` - Dify 接続テスト
 
-### ファイル処理
+### ファイル処理（実装予定）
 
 - `POST /api/process` - 単一ファイル処理
 - `POST /api/process-multiple` - 複数ファイル一括処理
 
-### ダウンロード
+### ダウンロード（実装予定）
 
 - `GET /api/download/{filename}` - 個別ファイルダウンロード
 - `GET /api/download-all` - 全ファイル ZIP ダウンロード
-
-### ファイル管理
-
-- `GET /api/files` - ファイル一覧取得
-- `DELETE /api/files/{filename}` - ファイル削除
 
 ## 🛡️ セキュリティ
 
 - ファイルサイズ制限: 10MB
 - 対応形式: PDF のみ
-- ディレクトリトラバーサル対策
-- CORS 設定
+- CORS 設定済み
+- 環境変数での秘匿情報管理
 
 ## 📝 ライセンス
 

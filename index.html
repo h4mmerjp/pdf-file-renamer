@@ -300,29 +300,87 @@
 
       // API接続テスト
       async function testApiConnection() {
-        const testEndpoints = ["/api/test", "/api/health", "/api/simple"];
+        const testEndpoints = [
+          { url: "/api/hello", name: "Hello API" },
+          { url: "/api/health", name: "Health Check" },
+          { url: "/api/test-dify", name: "Dify Connection Test" },
+        ];
+
+        console.log("=== Node.js API接続テスト開始 ===");
+        console.log("ベースURL:", window.location.origin);
+
+        let successCount = 0;
+        let workingEndpoint = null;
 
         for (const endpoint of testEndpoints) {
           try {
-            console.log(`Testing: ${endpoint}`);
-            const response = await fetch(endpoint);
+            console.log(`Testing: ${endpoint.name} (${endpoint.url})`);
+
+            const response = await fetch(endpoint.url, {
+              method: "GET",
+              cache: "no-cache",
+              headers: {
+                Accept: "application/json",
+              },
+            });
+
+            console.log(
+              `${endpoint.name} - Status: ${response.status} ${response.statusText}`
+            );
 
             if (response.ok) {
               const data = await response.json();
-              console.log(`${endpoint} success:`, data);
-              updateStatus("connected", `API接続OK (${endpoint})`);
-              return true;
+              console.log(`${endpoint.name} success:`, data);
+              successCount++;
+
+              if (!workingEndpoint) {
+                workingEndpoint = endpoint.name;
+              }
+
+              // Dify接続テストの結果を特別に処理
+              if (
+                endpoint.url === "/api/test-dify" &&
+                data.dify_connection === "connected"
+              ) {
+                updateStatus(
+                  "connected",
+                  `Dify API接続OK - ${workingEndpoint}`
+                );
+              } else if (successCount === 1) {
+                updateStatus("connected", `API接続OK - ${workingEndpoint}`);
+              }
+            } else {
+              const errorText = await response.text();
+              console.log(`${endpoint.name} error response:`, errorText);
             }
           } catch (error) {
-            console.log(`${endpoint} failed:`, error.message);
+            console.log(`${endpoint.name} failed:`, error.message);
           }
+
+          // 各テストの間に少し待機
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
 
-        updateStatus("disconnected", "API接続エラー");
-        showError(
-          "APIサーバーに接続できません。サーバーが起動しているか確認してください。"
+        console.log(
+          `=== テスト結果: ${successCount}/${testEndpoints.length} 成功 ===`
         );
-        return false;
+
+        if (successCount === 0) {
+          updateStatus("disconnected", "API接続エラー");
+          showError(
+            "すべてのAPIエンドポイントに接続できませんでした。Vercel関数の設定を確認してください。"
+          );
+
+          // デバッグ情報を表示
+          console.log("デバッグ情報:");
+          console.log("- ホスト:", window.location.hostname);
+          console.log("- プロトコル:", window.location.protocol);
+          console.log("- フルURL:", window.location.href);
+
+          return false;
+        }
+
+        return true;
       }
 
       // ファイル選択処理
