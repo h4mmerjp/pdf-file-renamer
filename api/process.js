@@ -1,4 +1,4 @@
-// PDF処理API (改善版 - Dify連携最適化)
+// PDF処理API (実働版 - Dify API統合)
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -63,7 +63,7 @@ export default async function handler(req, res) {
     console.log(`Processing ${files.length} files...`);
     const results = [];
 
-    // 各ファイルを順次処理（並列処理だとDify APIが制限される可能性）
+    // 各ファイルを順次処理
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
@@ -89,7 +89,7 @@ export default async function handler(req, res) {
           throw new Error("ファイルサイズが10MBを超えています");
         }
 
-        // 2段階処理: 1. ファイルアップロード → 2. ワークフロー実行
+        // Dify APIでPDF処理
         const difyResult = await processPDFWithDify(
           buffer,
           file.name,
@@ -108,6 +108,7 @@ export default async function handler(req, res) {
             document_type: difyResult.document_type,
             extracted_date: difyResult.date,
             confidence: difyResult.confidence || 0.8,
+            raw_analysis: difyResult.raw_response, // デバッグ用
           },
           processed_data: file.data,
           status: "success",
@@ -117,7 +118,7 @@ export default async function handler(req, res) {
 
         // APIレート制限を考慮して少し待機
         if (i < files.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       } catch (error) {
         console.error(`❌ Error processing ${file.name}:`, error.message);
@@ -180,12 +181,6 @@ function validateFile(file) {
     )}）`;
   }
 
-  // MIME typeチェック
-  const allowedMimeTypes = ["application/pdf"];
-  if (file.type && !allowedMimeTypes.includes(file.type)) {
-    return `サポートされていないMIMEタイプです: ${file.type}`;
-  }
-
   // Base64データの形式チェック
   if (!file.data.startsWith("data:application/pdf;base64,")) {
     return "無効なPDFファイル形式です";
@@ -194,18 +189,19 @@ function validateFile(file) {
   return null;
 }
 
-// Dify APIでPDFを処理（2段階処理）
+// Dify APIでPDFを処理
 async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
-  try {
-    console.log(`📤 Uploading file to Dify: ${filename}`);
+  console.log(`📤 Starting Dify API processing for: ${filename}`);
 
+  try {
     // 1段階目: ファイルアップロード
+    console.log("🔄 Step 1: Uploading file to Dify...");
+
     const uploadFormData = new FormData();
     const blob = new Blob([fileBuffer], { type: "application/pdf" });
     uploadFormData.append("file", blob, filename);
     uploadFormData.append("user", "pdf-renamer-user");
 
-    // ファイルアップロードAPI
     const uploadResponse = await fetch("https://api.dify.ai/v1/files/upload", {
       method: "POST",
       headers: {
@@ -214,21 +210,28 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
       body: uploadFormData,
     });
 
+    console.log(`📤 Upload response status: ${uploadResponse.status}`);
+
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
       console.error(
-        `❌ Dify upload error: ${uploadResponse.status} - ${errorText}`
+        `❌ Upload failed: ${uploadResponse.status} - ${errorText}`
       );
       throw new Error(
-        `ファイルアップロードエラー (${uploadResponse.status}): ${errorText}`
+        `ファイルアップロードエラー (${
+          uploadResponse.status
+        }): ${errorText.substring(0, 200)}`
       );
     }
 
     const uploadResult = await uploadResponse.json();
-    console.log("📤 Upload success:", uploadResult);
+    console.log("📤 Upload success:", {
+      id: uploadResult.id,
+      created_at: uploadResult.created_at,
+    });
 
     // 2段階目: ワークフロー実行
-    console.log(`⚙️ Running workflow for: ${filename}`);
+    console.log("⚙️ Step 2: Running workflow...");
 
     const workflowData = {
       inputs: {
@@ -237,6 +240,8 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
       response_mode: "blocking",
       user: "pdf-renamer-user",
     };
+
+    console.log("⚙️ Workflow request:", workflowData);
 
     const workflowResponse = await fetch(apiUrl, {
       method: "POST",
@@ -247,52 +252,109 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
       body: JSON.stringify(workflowData),
     });
 
+    console.log(`⚙️ Workflow response status: ${workflowResponse.status}`);
+
     if (!workflowResponse.ok) {
       const errorText = await workflowResponse.text();
       console.error(
-        `❌ Dify workflow error: ${workflowResponse.status} - ${errorText}`
+        `❌ Workflow failed: ${workflowResponse.status} - ${errorText}`
       );
       throw new Error(
-        `ワークフロー実行エラー (${workflowResponse.status}): ${errorText}`
+        `ワークフロー実行エラー (${
+          workflowResponse.status
+        }): ${errorText.substring(0, 200)}`
       );
     }
 
     const workflowResult = await workflowResponse.json();
-    console.log("⚙️ Workflow success:", workflowResult);
+    console.log(
+      "⚙️ Workflow success. Data structure:",
+      Object.keys(workflowResult)
+    );
+
+    // レスポンス構造をログ出力
+    if (workflowResult.data) {
+      console.log("📊 Workflow data keys:", Object.keys(workflowResult.data));
+      if (workflowResult.data.outputs) {
+        console.log("📋 Workflow outputs:", workflowResult.data.outputs);
+      }
+    }
 
     // レスポンスから情報を抽出
     const outputs = workflowResult.data?.outputs || {};
+
+    // 実際に抽出された値をログ出力
+    console.log("🔍 Extracted values:", {
+      issuing_organization: outputs.issuing_organization,
+      document_type: outputs.document_type,
+      raw_outputs: outputs,
+    });
 
     return {
       issuing_organization: outputs.issuing_organization || "不明機関",
       document_type: outputs.document_type || "その他書類",
       date: extractDateFromResponse(outputs) || formatCurrentDate(),
-      confidence: outputs.confidence || 0.8,
+      confidence: calculateConfidence(outputs),
       raw_response: workflowResult,
     };
   } catch (error) {
     console.error("❌ Dify API処理エラー:", error);
 
     // フォールバック: ファイル名から基本的な情報を推測
-    return {
+    const fallbackResult = {
       issuing_organization: inferOrganizationFromFilename(filename),
       document_type: inferDocumentTypeFromFilename(filename),
       date: formatCurrentDate(),
       confidence: 0.3,
       error: error.message,
+      fallback: true,
     };
+
+    console.log("🔄 Using fallback analysis:", fallbackResult);
+    return fallbackResult;
   }
+}
+
+// 信頼度を計算
+function calculateConfidence(outputs) {
+  let confidence = 0.5; // ベース信頼度
+
+  // 発行機関が特定できた場合
+  if (
+    outputs.issuing_organization &&
+    outputs.issuing_organization !== "不明機関"
+  ) {
+    confidence += 0.2;
+  }
+
+  // 書類種別が特定できた場合
+  if (outputs.document_type && outputs.document_type !== "その他書類") {
+    confidence += 0.2;
+  }
+
+  // その他の情報がある場合
+  if (outputs.text && outputs.text.length > 100) {
+    confidence += 0.1;
+  }
+
+  return Math.min(confidence, 1.0);
 }
 
 // ファイル名から組織を推測
 function inferOrganizationFromFilename(filename) {
   const orgPatterns = {
-    支払基金: ["支払", "基金", "shikyu"],
-    国保連: ["国保", "kokaho", "連合"],
+    支払基金: ["支払", "基金", "shikyu", "siharai"],
+    国保連: ["国保", "kokaho", "連合", "rengou"],
+    社保: ["社保", "shaho"],
+    健保: ["健保", "kenpo"],
   };
 
+  const lowerFilename = filename.toLowerCase();
+
   for (const [org, patterns] of Object.entries(orgPatterns)) {
-    if (patterns.some((pattern) => filename.toLowerCase().includes(pattern))) {
+    if (
+      patterns.some((pattern) => lowerFilename.includes(pattern.toLowerCase()))
+    ) {
       return org;
     }
   }
@@ -306,11 +368,17 @@ function inferDocumentTypeFromFilename(filename) {
     増減点連絡書: ["増減", "zougen"],
     返戻内訳書: ["返戻", "henrei"],
     "過誤・再審査結果通知書": ["過誤", "kago", "再審査"],
-    診療報酬明細書: ["明細", "meisai"],
+    診療報酬明細書: ["明細", "meisai", "receipt"],
+    医療費通知: ["通知", "tsuchi"],
+    保険証: ["保険証", "hokenshow"],
   };
 
+  const lowerFilename = filename.toLowerCase();
+
   for (const [type, patterns] of Object.entries(typePatterns)) {
-    if (patterns.some((pattern) => filename.toLowerCase().includes(pattern))) {
+    if (
+      patterns.some((pattern) => lowerFilename.includes(pattern.toLowerCase()))
+    ) {
       return type;
     }
   }
@@ -320,10 +388,17 @@ function inferDocumentTypeFromFilename(filename) {
 
 // レスポンスから日付を抽出
 function extractDateFromResponse(outputs) {
+  // 直接的な日付フィールドをチェック
   if (outputs.date) {
     return formatDate(outputs.date);
   }
 
+  // extracted_dateフィールドをチェック
+  if (outputs.extracted_date) {
+    return formatDate(outputs.extracted_date);
+  }
+
+  // テキストから日付を抽出
   const text = outputs.text || outputs.content || "";
   return extractDateFromText(text);
 }
@@ -331,9 +406,13 @@ function extractDateFromResponse(outputs) {
 // テキストから日付を抽出
 function extractDateFromText(text) {
   const datePatterns = [
+    // YYYY年MM月DD日
     /(\d{4})[年\-\/](\d{1,2})[月\-\/](\d{1,2})[日]?/,
+    // MM/DD/YYYY, DD/MM/YYYY
     /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/,
+    // YYYYMMDD
     /(\d{4})(\d{2})(\d{2})/,
+    // 令和X年MM月DD日
     /令和(\d{1,2})[年](\d{1,2})[月](\d{1,2})[日]?/,
   ];
 
@@ -341,6 +420,7 @@ function extractDateFromText(text) {
     const match = text.match(pattern);
     if (match) {
       if (pattern.source.includes("令和")) {
+        // 令和年号を西暦に変換
         const reiwaYear = parseInt(match[1]);
         const year = 2018 + reiwaYear;
         const month = match[2].padStart(2, "0");
@@ -353,10 +433,16 @@ function extractDateFromText(text) {
           year = match[1];
           month = match[2].padStart(2, "0");
           day = match[3].padStart(2, "0");
-        } else {
+        } else if (match[3].length === 4) {
+          // MM/DD/YYYY format
           month = match[1].padStart(2, "0");
           day = match[2].padStart(2, "0");
           year = match[3];
+        } else {
+          // YYYYMMDD format
+          year = match[1];
+          month = match[2];
+          day = match[3];
         }
 
         return `${year}${month}${day}`;
@@ -409,11 +495,13 @@ function normalizeOrganizationName(org) {
     社会保険診療報酬支払基金: "支払基金",
     国保連: "国保連",
     国民健康保険団体連合会: "国保連",
+    社保: "社保",
+    健保: "健保",
     不明: "不明機関",
   };
 
   for (const [key, value] of Object.entries(orgMap)) {
-    if (org.includes(key)) {
+    if (org && org.includes(key)) {
       return value;
     }
   }
@@ -432,10 +520,11 @@ function normalizeDocumentType(type) {
     振込: "当座口振込通知書",
     明細: "診療報酬明細書",
     通知: "医療費通知",
+    保険証: "保険証",
   };
 
   for (const [key, value] of Object.entries(typeMap)) {
-    if (type.includes(key)) {
+    if (type && type.includes(key)) {
       return value;
     }
   }
