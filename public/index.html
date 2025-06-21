@@ -1,3 +1,6 @@
+// API接続状態確認 async function checkApiConnection() { try {
+log('API接続テスト開始'); const response = await fetch(API_ENDPOINTS.health, {
+method: 'GET',
 <!DOCTYPE html>
 <html lang="ja">
   <head>
@@ -386,7 +389,47 @@
 
     <script>
       let selectedFiles = [];
-      const API_BASE = "http://localhost:8000";
+
+      // API設定（環境に応じて自動切り替え）
+      const API_BASE =
+        window.location.hostname === "localhost" ? "http://localhost:8000" : ""; // Vercelの場合は相対パス
+
+      const API_ENDPOINTS = {
+        health:
+          API_BASE +
+          (window.location.hostname === "localhost"
+            ? "/health"
+            : "/api/health"),
+        process:
+          API_BASE +
+          (window.location.hostname === "localhost"
+            ? "/process"
+            : "/api/process"),
+        processMultiple:
+          API_BASE +
+          (window.location.hostname === "localhost"
+            ? "/process-multiple"
+            : "/api/process-multiple"),
+        download: (filename) =>
+          API_BASE +
+          (window.location.hostname === "localhost"
+            ? `/download/${filename}`
+            : `/api/download/${filename}`),
+        downloadAll:
+          API_BASE +
+          (window.location.hostname === "localhost"
+            ? "/download-all"
+            : "/api/download-all"),
+        files:
+          API_BASE +
+          (window.location.hostname === "localhost" ? "/files" : "/api/files"),
+        deleteFile: (filename) =>
+          API_BASE +
+          (window.location.hostname === "localhost"
+            ? `/files/${filename}`
+            : `/api/files/${filename}`),
+      };
+
       const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
       const ALLOWED_TYPES = ["application/pdf"];
 
@@ -408,23 +451,52 @@
       // API接続状態確認
       async function checkApiConnection() {
         try {
-          log("API接続テスト開始");
-          const response = await fetch(`${API_BASE}/health`, {
+          log(`API接続テスト開始`);
+          log(
+            `環境: ${
+              window.location.hostname === "localhost" ? "ローカル" : "Vercel"
+            }`
+          );
+          log(`接続先: ${API_ENDPOINTS.health}`);
+
+          const response = await fetch(API_ENDPOINTS.health, {
             method: "GET",
-            timeout: 5000,
           });
+
+          log(`レスポンス状況: ${response.status} ${response.statusText}`);
 
           if (response.ok) {
             const data = await response.json();
             updateStatus("connected", `API接続OK (${data.version || "v1.0"})`);
             log("API接続成功");
+            log(`API情報: ${JSON.stringify(data, null, 2)}`);
             return true;
           } else {
-            throw new Error(`HTTP ${response.status}`);
+            const errorText = await response.text();
+            log(`HTTPエラー: ${response.status} - ${errorText}`, "error");
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
           }
         } catch (error) {
           updateStatus("disconnected", "API接続エラー");
           log(`API接続失敗: ${error.message}`, "error");
+
+          // Vercel環境での詳細診断
+          if (window.location.hostname !== "localhost") {
+            log("Vercel環境診断:", "info");
+            log(`ホスト: ${window.location.hostname}`, "info");
+            log(`プロトコル: ${window.location.protocol}`, "info");
+            log(`フルURL: ${window.location.href}`, "info");
+
+            // 代替エンドポイントをテスト
+            try {
+              log("ルートAPIテスト開始...", "info");
+              const rootResponse = await fetch("/api/", { method: "GET" });
+              log(`ルートAPIレスポンス: ${rootResponse.status}`, "info");
+            } catch (rootError) {
+              log(`ルートAPIエラー: ${rootError.message}`, "error");
+            }
+          }
+
           return false;
         }
       }
@@ -604,7 +676,7 @@
 
         log(`単一ファイル処理: ${file.name}`);
 
-        const response = await fetch(`${API_BASE}/process`, {
+        const response = await fetch(API_ENDPOINTS.process, {
           method: "POST",
           body: formData,
         });
@@ -638,7 +710,7 @@
         log(`複数ファイル処理: ${selectedFiles.length}個のファイル`);
         updateProgress(0, selectedFiles.length);
 
-        const response = await fetch(`${API_BASE}/process-multiple`, {
+        const response = await fetch(API_ENDPOINTS.processMultiple, {
           method: "POST",
           body: formData,
         });
@@ -766,9 +838,7 @@
         try {
           log(`ファイルダウンロード開始: ${filename}`);
 
-          const response = await fetch(
-            `${API_BASE}/download/${encodeURIComponent(filename)}`
-          );
+          const response = await fetch(API_ENDPOINTS.download(filename));
 
           if (!response.ok) {
             throw new Error(`ダウンロード失敗: ${response.status}`);
@@ -796,7 +866,7 @@
         try {
           log("一括ダウンロード開始");
 
-          const response = await fetch(`${API_BASE}/download-all`);
+          const response = await fetch(API_ENDPOINTS.downloadAll);
 
           if (!response.ok) {
             throw new Error(`一括ダウンロード失敗: ${response.status}`);
@@ -824,7 +894,7 @@
         try {
           log("ファイル一覧取得開始");
 
-          const response = await fetch(`${API_BASE}/files`);
+          const response = await fetch(API_ENDPOINTS.files);
 
           if (!response.ok) {
             throw new Error(`ファイル一覧取得失敗: ${response.status}`);
@@ -888,12 +958,9 @@
         try {
           log(`ファイル削除開始: ${filename}`);
 
-          const response = await fetch(
-            `${API_BASE}/files/${encodeURIComponent(filename)}`,
-            {
-              method: "DELETE",
-            }
-          );
+          const response = await fetch(API_ENDPOINTS.deleteFile(filename), {
+            method: "DELETE",
+          });
 
           if (!response.ok) {
             throw new Error(`削除失敗: ${response.status}`);
