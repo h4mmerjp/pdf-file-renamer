@@ -26,7 +26,7 @@
         border-radius: 20px;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         padding: 40px;
-        max-width: 900px;
+        max-width: 800px;
         width: 100%;
       }
 
@@ -66,6 +66,11 @@
       .status-disconnected {
         border-left: 4px solid #dc3545;
         color: #dc3545;
+      }
+
+      .status-checking {
+        border-left: 4px solid #ffc107;
+        color: #856404;
       }
 
       .upload-area {
@@ -173,7 +178,6 @@
         cursor: pointer;
         transition: all 0.3s ease;
         margin-top: 20px;
-        position: relative;
       }
 
       .process-btn:hover:not(:disabled) {
@@ -186,27 +190,6 @@
         cursor: not-allowed;
         transform: none;
         box-shadow: none;
-      }
-
-      .process-btn.processing {
-        background: #ffc107;
-        color: #856404;
-      }
-
-      .spinner {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid #f3f3f3;
-        border-top: 3px solid #667eea;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-right: 10px;
-      }
-
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
       }
 
       .message {
@@ -233,174 +216,42 @@
         border: 1px solid #ffeaa7;
       }
 
-      .progress-bar {
-        width: 100%;
-        height: 8px;
-        background-color: #e9ecef;
-        border-radius: 4px;
-        overflow: hidden;
-        margin: 15px 0;
-      }
-
-      .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #667eea, #764ba2);
-        transition: width 0.3s ease;
-        border-radius: 4px;
-      }
-
-      .results-container {
-        margin-top: 30px;
-      }
-
-      .result-item {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 15px;
-        border-left: 4px solid #28a745;
-      }
-
-      .result-item.error {
-        border-left-color: #dc3545;
-      }
-
-      .result-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 15px;
-      }
-
-      .result-filename {
-        font-weight: 600;
-        color: #333;
-      }
-
-      .result-status {
-        padding: 4px 8px;
-        border-radius: 12px;
-        font-size: 0.8em;
-        font-weight: 500;
-      }
-
-      .status-success {
-        background: #d4edda;
-        color: #155724;
-      }
-
-      .status-error {
-        background: #f8d7da;
-        color: #721c24;
-      }
-
-      .result-details {
-        color: #666;
-        font-size: 0.9em;
-        line-height: 1.6;
-        margin-bottom: 15px;
-      }
-
-      .result-analysis {
-        background: #e9ecef;
+      .debug-info {
+        background: #e7f3ff;
+        color: #004085;
+        border: 1px solid #bee5eb;
         padding: 10px;
         border-radius: 5px;
-        margin-bottom: 10px;
-        font-size: 0.85em;
-      }
-
-      .download-btn {
-        background: #28a745;
-        color: white;
-        border: none;
-        border-radius: 5px;
-        padding: 8px 12px;
-        cursor: pointer;
-        font-size: 0.85em;
-        margin-right: 5px;
-      }
-
-      .download-btn:hover {
-        background: #218838;
-      }
-
-      .download-all-btn {
-        background: #007bff;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 12px 20px;
-        cursor: pointer;
-        font-size: 1em;
-        margin-top: 20px;
-        width: 100%;
-      }
-
-      .download-all-btn:hover {
-        background: #0056b3;
-      }
-
-      .feature-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 20px;
-        margin-top: 30px;
-      }
-
-      .feature-card {
-        background: #f8f9ff;
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-      }
-
-      .feature-icon {
-        font-size: 2em;
-        color: #667eea;
-        margin-bottom: 10px;
-      }
-
-      .feature-title {
-        font-weight: 600;
-        color: #333;
-        margin-bottom: 8px;
-      }
-
-      .feature-desc {
-        color: #666;
-        font-size: 0.9em;
-      }
-
-      .summary-stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 15px;
-        margin-bottom: 20px;
-      }
-
-      .stat-card {
-        background: white;
-        padding: 15px;
-        border-radius: 8px;
-        text-align: center;
-        border: 1px solid #e9ecef;
-      }
-
-      .stat-number {
-        font-size: 1.5em;
-        font-weight: 700;
-        color: #333;
-      }
-
-      .stat-label {
+        margin: 10px 0;
+        font-family: monospace;
         font-size: 0.8em;
-        color: #666;
-        margin-top: 5px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 10px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
       }
     </style>
   </head>
   <body>
-    <div class="status-indicator" id="statusIndicator">
+    <div class="status-indicator status-checking" id="statusIndicator">
       <span id="statusText">接続確認中...</span>
     </div>
 
@@ -410,11 +261,13 @@
         <p>PDFファイルをAIで自動分析してリネームします</p>
       </div>
 
-      <div
-        class="upload-area"
-        id="uploadArea"
-        onclick="document.getElementById('fileInput').click()"
-      >
+      <!-- デバッグ情報表示エリア -->
+      <div id="debugInfo" class="debug-info" style="display: none">
+        <strong>デバッグ情報:</strong><br />
+        <div id="debugContent"></div>
+      </div>
+
+      <div class="upload-area" id="uploadArea">
         <div class="upload-icon">📄</div>
         <div class="upload-text">PDFファイルをドラッグ&ドロップ</div>
         <div class="upload-subtext">
@@ -426,38 +279,598 @@
           class="file-input"
           multiple
           accept=".pdf"
-          onchange="handleFileSelect(event)"
         />
       </div>
 
       <div class="selected-files" id="selectedFiles"></div>
 
-      <div class="progress-bar" id="progressBar" style="display: none;">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-
-      <button
-        class="process-btn"
-        id="processBtn"
-        onclick="processFiles()"
-        disabled
-      >
+      <button class="process-btn" id="processBtn" disabled>
         ファイルを処理する
       </button>
 
       <div id="messageDisplay"></div>
 
-      <div class="results-container" id="resultsContainer" style="display: none;">
-        <h3>処理結果</h3>
-        <div class="summary-stats" id="summaryStats"></div>
-        <div id="resultsList"></div>
-        <button class="download-all-btn" onclick="downloadAllFiles()" style="display: none;" id="downloadAllBtn">
-          すべてのファイルをZIPでダウンロード
+      <!-- テスト用ボタン -->
+      <div style="margin-top: 30px; text-align: center">
+        <button
+          id="debugToggle"
+          style="
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+          "
+        >
+          デバッグ情報表示切替
+        </button>
+        <button
+          id="apiTest"
+          style="
+            background: #17a2b8;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+          "
+        >
+          API接続テスト
         </button>
       </div>
+    </div>
 
-      <div class="feature-grid">
-        <div class="feature-card">
-          <div class="feature-icon">🤖</div>
-          <div class="feature-title">AI自動分析</div>
-          <div class
+    <script>
+      // グローバル変数
+      let selectedFiles = [];
+      let isProcessing = false;
+      let debugMode = false;
+
+      // デバッグログ関数
+      function debugLog(message, data = null) {
+        const timestamp = new Date().toLocaleTimeString();
+        console.log(`[DEBUG ${timestamp}] ${message}`, data || "");
+
+        if (debugMode) {
+          const debugContent = document.getElementById("debugContent");
+          if (debugContent) {
+            debugContent.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            if (data) {
+              debugContent.innerHTML += `<div style="margin-left: 20px; color: #666;">${JSON.stringify(
+                data,
+                null,
+                2
+              )}</div>`;
+            }
+            debugContent.scrollTop = debugContent.scrollHeight;
+          }
+        }
+      }
+
+      // デバッグモード切替
+      function toggleDebug() {
+        debugMode = !debugMode;
+        const debugInfo = document.getElementById("debugInfo");
+        debugInfo.style.display = debugMode ? "block" : "none";
+
+        if (debugMode) {
+          debugLog("デバッグモード開始");
+          debugLog("現在のURL", window.location.href);
+          debugLog("ユーザーエージェント", navigator.userAgent);
+        }
+      }
+
+      // 状態表示更新
+      function updateStatus(status, text) {
+        debugLog(`状態更新: ${status} - ${text}`);
+
+        const indicator = document.getElementById("statusIndicator");
+        const statusText = document.getElementById("statusText");
+
+        if (indicator && statusText) {
+          indicator.className = `status-indicator status-${status}`;
+          statusText.textContent = text;
+        }
+      }
+
+      // メッセージ表示
+      function showMessage(message, type = "info") {
+        debugLog(`メッセージ表示: ${type} - ${message}`);
+
+        const messageDiv = document.getElementById("messageDisplay");
+        if (!messageDiv) return;
+
+        const typeClass =
+          type === "error"
+            ? "error-message"
+            : type === "success"
+            ? "success-message"
+            : type === "warning"
+            ? "warning-message"
+            : "message";
+
+        messageDiv.innerHTML = `<div class="${typeClass}">${message}</div>`;
+
+        // エラー以外は5秒後に自動削除
+        if (type !== "error") {
+          setTimeout(() => {
+            messageDiv.innerHTML = "";
+          }, 5000);
+        }
+      }
+
+      // ファイル選択処理
+      function handleFileSelect(event) {
+        debugLog("ファイル選択イベント発生");
+
+        if (!event || !event.target) {
+          debugLog("エラー: イベントまたはターゲットが無効");
+          return;
+        }
+
+        const files = event.target.files;
+        debugLog("選択されたファイル数", files.length);
+
+        if (files.length === 0) {
+          debugLog("ファイルが選択されていません");
+          return;
+        }
+
+        // ファイル情報をログ出力
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          debugLog(`ファイル ${i + 1}`, {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+          });
+        }
+
+        addFiles(Array.from(files));
+      }
+
+      // アップロードエリアクリック処理
+      function handleUploadClick() {
+        debugLog("アップロードエリアがクリックされました");
+
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) {
+          debugLog("ファイル入力をクリック");
+          fileInput.click();
+        } else {
+          debugLog("エラー: ファイル入力要素が見つかりません");
+        }
+      }
+
+      // ファイルをBase64に変換
+      function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            debugLog(`Base64変換完了: ${file.name}`);
+            resolve(reader.result);
+          };
+          reader.onerror = (error) => {
+            debugLog(`Base64変換エラー: ${file.name}`, error);
+            reject(error);
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      // ファイル追加
+      async function addFiles(files) {
+        debugLog("ファイル追加処理開始", { fileCount: files.length });
+
+        const maxFiles = 5;
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        let addedCount = 0;
+
+        for (const file of files) {
+          try {
+            // ファイル数制限チェック
+            if (selectedFiles.length >= maxFiles) {
+              showMessage(
+                `最大${maxFiles}ファイルまでしか選択できません。`,
+                "warning"
+              );
+              break;
+            }
+
+            // ファイル形式チェック
+            if (file.type !== "application/pdf") {
+              debugLog(`ファイル形式エラー: ${file.name} (${file.type})`);
+              showMessage(
+                `${file.name}: PDFファイルのみサポートしています。`,
+                "warning"
+              );
+              continue;
+            }
+
+            // ファイルサイズチェック
+            if (file.size > maxSize) {
+              debugLog(
+                `ファイルサイズエラー: ${file.name} (${file.size} bytes)`
+              );
+              showMessage(
+                `${file.name}: ファイルサイズが10MBを超えています。`,
+                "warning"
+              );
+              continue;
+            }
+
+            // 重複チェック
+            const isDuplicate = selectedFiles.some(
+              (f) => f.name === file.name && f.size === file.size
+            );
+
+            if (isDuplicate) {
+              debugLog(`重複ファイル: ${file.name}`);
+              continue;
+            }
+
+            debugLog(`ファイル処理開始: ${file.name}`);
+
+            // Base64に変換
+            const base64Data = await fileToBase64(file);
+
+            const fileData = {
+              file: file,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              data: base64Data,
+            };
+
+            selectedFiles.push(fileData);
+            addedCount++;
+            debugLog(`ファイル追加完了: ${file.name}`);
+          } catch (error) {
+            debugLog(`ファイル処理エラー: ${file.name}`, error);
+            showMessage(
+              `${file.name}: ファイル読み込みに失敗しました。`,
+              "error"
+            );
+          }
+        }
+
+        if (addedCount > 0) {
+          showMessage(`${addedCount}個のファイルを追加しました。`, "success");
+        }
+
+        updateFileList();
+      }
+
+      // ファイル削除
+      function removeFile(index) {
+        if (selectedFiles[index]) {
+          debugLog(`ファイル削除: ${selectedFiles[index].name}`);
+          selectedFiles.splice(index, 1);
+          updateFileList();
+        }
+      }
+
+      // ファイルリスト更新
+      function updateFileList() {
+        debugLog("ファイルリスト更新", { fileCount: selectedFiles.length });
+
+        const fileList = document.getElementById("selectedFiles");
+        const processBtn = document.getElementById("processBtn");
+
+        if (!fileList || !processBtn) {
+          debugLog("エラー: 必要な要素が見つかりません");
+          return;
+        }
+
+        if (selectedFiles.length === 0) {
+          fileList.innerHTML = "";
+          processBtn.disabled = true;
+          return;
+        }
+
+        processBtn.disabled = isProcessing;
+
+        fileList.innerHTML = selectedFiles
+          .map(
+            (fileData, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-icon">📄</div>
+                        <div class="file-details">
+                            <div class="file-name">${fileData.name}</div>
+                            <div class="file-size">${formatFileSize(
+                              fileData.size
+                            )}</div>
+                        </div>
+                    </div>
+                    <button class="remove-btn" onclick="removeFile(${index})" ${
+              isProcessing ? "disabled" : ""
+            }>削除</button>
+                </div>
+            `
+          )
+          .join("");
+      }
+
+      // ファイルサイズフォーマット
+      function formatFileSize(bytes) {
+        if (bytes === 0) return "0 Bytes";
+        const k = 1024;
+        const sizes = ["Bytes", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      }
+
+      // API接続テスト（手動実行）
+      async function testApiManually() {
+        debugLog("手動API接続テスト開始");
+        updateStatus("checking", "接続テスト中...");
+        await testApiConnection();
+      }
+
+      // API接続テスト
+      async function testApiConnection() {
+        const testEndpoints = [
+          { url: "/api/hello", name: "Hello API" },
+          { url: "/api/health", name: "Health Check" },
+          { url: "/api/test-dify", name: "Dify Connection Test" },
+        ];
+
+        debugLog("API接続テスト開始");
+
+        let successCount = 0;
+        let difyConnected = false;
+
+        for (const endpoint of testEndpoints) {
+          try {
+            debugLog(`テスト開始: ${endpoint.name} (${endpoint.url})`);
+
+            const response = await fetch(endpoint.url, {
+              method: "GET",
+              cache: "no-cache",
+              headers: { Accept: "application/json" },
+            });
+
+            debugLog(
+              `${endpoint.name} レスポンス: ${response.status} ${response.statusText}`
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+              debugLog(`${endpoint.name} 成功`, data);
+              successCount++;
+
+              if (
+                endpoint.url === "/api/test-dify" &&
+                data.dify_connection === "connected"
+              ) {
+                difyConnected = true;
+              }
+            } else {
+              const errorText = await response.text();
+              debugLog(`${endpoint.name} エラー`, errorText);
+            }
+          } catch (error) {
+            debugLog(`${endpoint.name} 例外`, error.message);
+          }
+
+          // 少し待機
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+
+        debugLog(`テスト結果: ${successCount}/${testEndpoints.length} 成功`);
+
+        if (successCount === 0) {
+          updateStatus("disconnected", "API接続エラー");
+          showMessage(
+            "すべてのAPIエンドポイントに接続できませんでした。",
+            "error"
+          );
+          return false;
+        } else if (difyConnected) {
+          updateStatus("connected", "Dify API接続OK");
+          showMessage("Dify APIに正常に接続されています。", "success");
+        } else {
+          updateStatus("connected", "API接続OK（Dify未確認）");
+          showMessage(
+            "基本APIは接続できていますが、Dify接続を確認してください。",
+            "warning"
+          );
+        }
+
+        return true;
+      }
+
+      // ファイル処理
+      async function processFiles() {
+        if (selectedFiles.length === 0) {
+          showMessage("ファイルが選択されていません。", "warning");
+          return;
+        }
+
+        if (isProcessing) {
+          return;
+        }
+
+        isProcessing = true;
+        debugLog("ファイル処理開始", { fileCount: selectedFiles.length });
+
+        const processBtn = document.getElementById("processBtn");
+        if (processBtn) {
+          processBtn.innerHTML = '<div class="spinner"></div>処理中...';
+          processBtn.disabled = true;
+        }
+
+        try {
+          // API呼び出し用のデータを準備
+          const filesData = selectedFiles.map((fileData) => ({
+            name: fileData.name,
+            size: fileData.size,
+            type: fileData.type,
+            data: fileData.data,
+          }));
+
+          debugLog("API呼び出し準備完了", { fileCount: filesData.length });
+
+          const response = await fetch("/api/process", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              files: filesData,
+              timestamp: new Date().toISOString(),
+            }),
+          });
+
+          debugLog(`Process API Response: ${response.status}`);
+
+          if (response.ok) {
+            const data = await response.json();
+            debugLog("Process API Success:", data);
+            showMessage(data.message || "処理が完了しました。", "success");
+          } else {
+            const errorData = await response.json();
+            debugLog("Process API Error:", errorData);
+            showMessage(
+              `処理エラー (${response.status}): ${
+                errorData.message || errorData.error
+              }`,
+              "error"
+            );
+          }
+        } catch (error) {
+          debugLog("Process error:", error);
+          showMessage(
+            `処理中にエラーが発生しました: ${error.message}`,
+            "error"
+          );
+        } finally {
+          // UI状態をリセット
+          isProcessing = false;
+          if (processBtn) {
+            processBtn.innerHTML = "ファイルを処理する";
+            processBtn.disabled = selectedFiles.length === 0;
+          }
+          updateFileList();
+        }
+      }
+
+      // イベントリスナーの設定
+      function setupEventListeners() {
+        debugLog("イベントリスナー設定開始");
+
+        // ファイル入力
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) {
+          fileInput.addEventListener("change", handleFileSelect);
+          debugLog("ファイル入力イベントリスナー設定完了");
+        }
+
+        // アップロードエリア
+        const uploadArea = document.getElementById("uploadArea");
+        if (uploadArea) {
+          uploadArea.addEventListener("click", handleUploadClick);
+
+          uploadArea.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            uploadArea.classList.add("dragover");
+            debugLog("ドラッグオーバー");
+          });
+
+          uploadArea.addEventListener("dragleave", (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove("dragover");
+            debugLog("ドラッグリーブ");
+          });
+
+          uploadArea.addEventListener("drop", (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove("dragover");
+
+            const files = Array.from(e.dataTransfer.files);
+            debugLog("ファイルドロップ", { fileCount: files.length });
+
+            const pdfFiles = files.filter(
+              (file) => file.type === "application/pdf"
+            );
+
+            if (pdfFiles.length > 0) {
+              addFiles(pdfFiles);
+            } else {
+              showMessage("PDFファイルのみドロップできます。", "warning");
+            }
+          });
+
+          debugLog("アップロードエリアイベントリスナー設定完了");
+        }
+
+        // ボタン
+        const debugToggle = document.getElementById("debugToggle");
+        if (debugToggle) {
+          debugToggle.addEventListener("click", toggleDebug);
+        }
+
+        const apiTest = document.getElementById("apiTest");
+        if (apiTest) {
+          apiTest.addEventListener("click", testApiManually);
+        }
+
+        const processBtn = document.getElementById("processBtn");
+        if (processBtn) {
+          processBtn.addEventListener("click", processFiles);
+        }
+
+        debugLog("すべてのイベントリスナー設定完了");
+      }
+
+      // 初期化
+      function initialize() {
+        debugLog("アプリケーション初期化開始");
+
+        // 基本的な環境情報を表示
+        debugLog("環境情報", {
+          userAgent: navigator.userAgent,
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+        });
+
+        // イベントリスナーを設定
+        setupEventListeners();
+
+        // API接続テストを実行
+        testApiConnection();
+
+        debugLog("初期化完了");
+      }
+
+      // DOMが読み込まれた後に初期化
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initialize);
+      } else {
+        initialize();
+      }
+
+      // エラーハンドリング
+      window.addEventListener("error", (event) => {
+        debugLog("グローバルエラー", {
+          message: event.message,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          error: event.error?.toString(),
+        });
+      });
+
+      // 未処理のPromise rejectionをキャッチ
+      window.addEventListener("unhandledrejection", (event) => {
+        debugLog("未処理のPromise rejection", {
+          reason: event.reason?.toString(),
+          promise: event.promise,
+        });
+      });
+    </script>
+  </body>
+</html>
