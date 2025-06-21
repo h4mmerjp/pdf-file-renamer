@@ -1,264 +1,859 @@
-"""
-PDFファイルリネーマー メインアプリケーション
-既存のDify APIを使用してファイルリネーム機能を提供
-"""
-
-import os
-import sys
-import json
-import logging
-import argparse
-from pathlib import Path
-from typing import List, Dict, Any
-from dotenv import load_dotenv
-
-# 相対インポート用にパスを追加
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from src.dify_client import DifyClient
-from src.file_renamer import FileRenamer
-
-class PDFFileRenamer:
-    def __init__(self, config_path: str = 'config/settings.json'):
-        """
-        PDFファイルリネーマーを初期化
+// API接続状態確認
+        async function checkApiConnection() {
+            try {
+                log('API接続テスト開始');
+                const response = await fetch(API_ENDPOINTS.health, {
+                    method: 'GET',
+                <!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF File Renamer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         
-        Args:
-            config_path: 設定ファイルのパス
-        """
-        self.config = self.load_config(config_path)
-        self.setup_logging()
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
         
-        # 各コンポーネントを初期化
-        self.dify_client = DifyClient(self.config)
-        self.file_renamer = FileRenamer(self.config)
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
         
-        # Google Drive機能（今回は無効）
-        self.google_drive = None
-        logging.info("Google Drive機能は無効です")
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        
+        .upload-area:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+        
+        .upload-area.dragover {
+            border-color: #667eea;
+            background-color: #f0f2ff;
+        }
+        
+        .upload-icon {
+            font-size: 3em;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        
+        .upload-text {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .upload-subtext {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .selected-files {
+            margin-top: 20px;
+        }
+        
+        .file-item {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .file-info {
+            display: flex;
+            align-items: center;
+        }
+        
+        .file-icon {
+            color: #dc3545;
+            margin-right: 10px;
+            font-size: 1.2em;
+        }
+        
+        .file-name {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .file-size {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        
+        .remove-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        
+        .remove-btn:hover {
+            background: #c82333;
+        }
+        
+        .process-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+        
+        .process-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .process-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .result-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .result-success {
+            border-left: 4px solid #28a745;
+        }
+        
+        .result-error {
+            border-left: 4px solid #dc3545;
+        }
+        
+        .original-name {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .new-name {
+            color: #28a745;
+            font-size: 0.9em;
+        }
+        
+        .error-message {
+            color: #dc3545;
+            font-size: 0.9em;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .feature-card {
+            background: #f8f9ff;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .feature-icon {
+            font-size: 2em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .feature-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .feature-desc {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .status-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 10px;
+            padding: 10px 15px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            font-size: 0.9em;
+        }
+        
+        .status-connected {
+            border-left: 4px solid #28a745;
+            color: #28a745;
+        }
+        
+        .status-disconnected {
+            border-left: 4px solid #dc3545;
+            color: #dc3545;
+        }
+        
+        .debug-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+            color: #666;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-indicator" id="statusIndicator">
+        <span id="statusText">接続確認中...</span>
+    </div>
     
-    def load_config(self, config_path: str) -> Dict[str, Any]:
-        """
-        設定ファイルを読み込む
+    <div class="container">
+        <div class="header">
+            <h1>📋 PDF File Renamer</h1>
+            <p>PDFファイルをAIで自動分析してリネームします</p>
+        </div>
         
-        Args:
-            config_path: 設定ファイルのパス
-            
-        Returns:
-            設定辞書
-        """
-        # 環境変数を読み込み
-        load_dotenv('config/.env')
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-icon">📄</div>
+            <div class="upload-text">PDFファイルをドラッグ&ドロップ</div>
+            <div class="upload-subtext">または クリックしてファイルを選択（10MB以下、PDF形式）</div>
+            <input type="file" id="fileInput" class="file-input" multiple accept=".pdf" onchange="handleFileSelect(event)">
+        </div>
         
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            # 環境変数で設定を上書き
-            if os.getenv('DIFY_API_KEY'):
-                config['dify']['api_key'] = os.getenv('DIFY_API_KEY')
-            if os.getenv('DIFY_API_URL'):
-                config['dify']['api_url'] = os.getenv('DIFY_API_URL')
-            
-            return config
-            
-        except FileNotFoundError:
-            print(f"設定ファイルが見つかりません: {config_path}")
-            sys.exit(1)
-        except json.JSONDecodeError as e:
-            print(f"設定ファイルの形式が正しくありません: {str(e)}")
-            sys.exit(1)
+        <div class="selected-files" id="selectedFiles"></div>
+        
+        <button class="process-btn" id="processBtn" onclick="processFiles()" disabled>
+            ファイルを処理する
+        </button>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div id="loadingText">AIで処理中...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+        
+        <div class="results" id="results"></div>
+        
+        <div class="debug-info" id="debugInfo"></div>
+        
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <div class="feature-title">AI自動分析</div>
+                <div class="feature-desc">Dify AIが発行機関と書類種別を自動識別</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📅</div>
+                <div class="feature-title">日本語ファイル名</div>
+                <div class="feature-desc">日付_発行機関_書類種別の分かりやすい形式</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">一括処理</div>
+                <div class="feature-desc">複数のPDFファイルを同時に処理可能</div>
+            </div>
+        </div>
+    </div>
     
-    def setup_logging(self):
-        """
-        ログ設定を初期化
-        """
-        log_config = self.config['logging']
+    <script>
+        let selectedFiles = [];
         
-        # ログディレクトリを作成
-        log_path = Path(log_config['file'])
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # ログレベルを設定
-        level = getattr(logging, log_config['level'])
-        
-        # ログフォーマットを設定
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        
-        # ファイルハンドラー
-        file_handler = logging.FileHandler(log_config['file'], encoding='utf-8')
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(level)
-        
-        # コンソールハンドラー
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(level)
-        
-        # ルートロガーを設定
-        logging.basicConfig(
-            level=level,
-            handlers=[file_handler, console_handler],
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-    
-    def get_pdf_files(self, input_path: str) -> List[Path]:
-        """
-        指定されたパスからPDFファイルを取得（重複排除）
-        
-        Args:
-            input_path: 入力パス（ファイルまたはディレクトリ）
+        // API設定（環境に応じて自動切り替え）
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8000' 
+            : window.location.protocol + '//' + window.location.hostname;
             
-        Returns:
-            PDFファイルのパスリスト（重複なし）
-        """
-        input_path = Path(input_path)
-        pdf_files = []
+        const API_ENDPOINTS = {
+            health: API_BASE + (window.location.hostname === 'localhost' ? '/health' : '/api/health'),
+            process: API_BASE + (window.location.hostname === 'localhost' ? '/process' : '/api/process'),
+            processMultiple: API_BASE + (window.location.hostname === 'localhost' ? '/process-multiple' : '/api/process-multiple'),
+            download: (filename) => API_BASE + (window.location.hostname === 'localhost' ? `/download/${filename}` : `/api/download/${filename}`),
+            downloadAll: API_BASE + (window.location.hostname === 'localhost' ? '/download-all' : '/api/download-all'),
+            files: API_BASE + (window.location.hostname === 'localhost' ? '/files' : '/api/files'),
+            deleteFile: (filename) => API_BASE + (window.location.hostname === 'localhost' ? `/files/${filename}` : `/api/files/${filename}`)
+        };
         
-        if input_path.is_file():
-            if input_path.suffix.lower() == '.pdf':
-                pdf_files.append(input_path)
-        elif input_path.is_dir():
-            # rglob を使用して再帰的に検索し、重複を避ける
-            pdf_files_set = set()
-            for pattern in ['*.pdf', '*.PDF']:
-                for file in input_path.glob(pattern):
-                    pdf_files_set.add(file.resolve())  # 絶対パスで重複チェック
-            
-            pdf_files = list(pdf_files_set)
+        const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+        const ALLOWED_TYPES = ['application/pdf'];
         
-        unique_files = sorted(pdf_files)
-        logging.info(f"検出されたPDFファイル数: {len(unique_files)}")
-        for file in unique_files:
-            logging.info(f"  - {file.name}")
+        // ログ機能
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+            console.log(logEntry);
+            
+            // デバッグ情報表示（開発時のみ）
+            const debugElement = document.getElementById('debugInfo');
+            if (debugElement && type === 'error') {
+                debugElement.style.display = 'block';
+                debugElement.textContent += logEntry + '\n';
+                debugElement.scrollTop = debugElement.scrollHeight;
+            }
+        }
         
-        return unique_files
-    
-    def process_single_file(self, file_path: Path) -> bool:
-        """
-        単一のPDFファイルを処理
+        // API接続状態確認
+        async function checkApiConnection() {
+            try {
+                log('API接続テスト開始');
+                const response = await fetch(API_ENDPOINTS.health, {
+                    method: 'GET',
+                    timeout: 5000
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStatus('connected', `API接続OK (${data.version || 'v1.0'})`);
+                    log('API接続成功');
+                    return true;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                updateStatus('disconnected', 'API接続エラー');
+                log(`API接続失敗: ${error.message}`, 'error');
+                return false;
+            }
+        }
         
-        Args:
-            file_path: 処理するPDFファイルのパス
+        // 状態表示更新
+        function updateStatus(status, text) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
             
-        Returns:
-            処理成功時True
-        """
-        try:
-            logging.info(f"処理開始: {file_path.name}")
-            
-            # Difyで情報抽出
-            logging.info("Difyで情報抽出中...")
-            result = self.dify_client.process_pdf(str(file_path))
-            
-            if not result:
-                logging.error(f"Dify処理に失敗しました: {file_path.name}")
-                return False
-            
-            # 情報を抽出
-            extracted_info = self.dify_client.extract_info_from_result(result)
-            extracted_info['original_filename'] = file_path.name
-            
-            logging.info(f"抽出された情報: {extracted_info}")
-            
-            # ファイルをリネーム
-            logging.info("ファイルをリネーム中...")
-            renamed_path = self.file_renamer.rename_file(str(file_path), extracted_info)
-            
-            logging.info(f"処理完了: {file_path.name} -> {Path(renamed_path).name}")
-            return True
-            
-        except Exception as e:
-            logging.error(f"ファイル処理エラー ({file_path.name}): {str(e)}")
-            return False
-    
-    def process_files(self, input_path: str) -> Dict[str, int]:
-        """
-        複数のPDFファイルを処理
+            indicator.className = `status-indicator status-${status}`;
+            statusText.textContent = text;
+        }
         
-        Args:
-            input_path: 入力パス
+        // ファイルバリデーション
+        function validateFile(file) {
+            if (!ALLOWED_TYPES.includes(file.type)) {
+                throw new Error(`サポートされていないファイル形式: ${file.type}。PDFファイルのみ対応しています。`);
+            }
             
-        Returns:
-            処理結果の統計
-        """
-        pdf_files = self.get_pdf_files(input_path)
-        
-        if not pdf_files:
-            logging.warning(f"PDFファイルが見つかりませんでした: {input_path}")
-            return {'total': 0, 'success': 0, 'failed': 0}
-        
-        logging.info(f"{len(pdf_files)}個のPDFファイルを処理します")
-        
-        stats = {'total': len(pdf_files), 'success': 0, 'failed': 0}
-        
-        for i, file_path in enumerate(pdf_files, 1):
-            logging.info(f"[{i}/{len(pdf_files)}] 処理中: {file_path.name}")
+            if (file.size > MAX_FILE_SIZE) {
+                throw new Error(`ファイルサイズが大きすぎます: ${formatFileSize(file.size)}。10MB以下にしてください。`);
+            }
             
-            if self.process_single_file(file_path):
-                stats['success'] += 1
-            else:
-                stats['failed'] += 1
-            
-            # 進捗表示
-            progress = (i / len(pdf_files)) * 100
-            logging.info(f"進捗: {progress:.1f}% ({i}/{len(pdf_files)})")
+            if (file.size === 0) {
+                throw new Error('ファイルが空です。');
+            }
+        }
         
-        return stats
-
-
-def main():
-    """
-    メイン関数
-    """
-    parser = argparse.ArgumentParser(description='PDF File Renamer')
-    parser.add_argument('--input', '-i', type=str, help='入力ファイルまたはディレクトリ')
-    parser.add_argument('--config', '-c', type=str, default='config/settings.json', help='設定ファイルのパス')
-    parser.add_argument('--debug', action='store_true', help='デバッグモードで実行')
-    
-    args = parser.parse_args()
-    
-    try:
-        # アプリケーションを初期化
-        app = PDFFileRenamer(args.config)
+        // ドラッグ&ドロップ機能
+        const uploadArea = document.querySelector('.upload-area');
         
-        if args.debug:
-            logging.getLogger().setLevel(logging.DEBUG)
-            logging.debug("デバッグモードで実行中")
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
         
-        if args.input:
-            # コマンドライン版を実行
-            logging.info("PDF File Renamer を開始します")
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            addFiles(files);
+        });
+        
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            addFiles(files);
+        }
+        
+        function addFiles(files) {
+            const validFiles = [];
             
-            stats = app.process_files(args.input)
+            for (const file of files) {
+                try {
+                    validateFile(file);
+                    
+                    // 重複チェック
+                    const isDuplicate = selectedFiles.some(f => 
+                        f.name === file.name && f.size === file.size
+                    );
+                    
+                    if (!isDuplicate) {
+                        validFiles.push(file);
+                        log(`ファイル追加: ${file.name} (${formatFileSize(file.size)})`);
+                    } else {
+                        log(`重複ファイルをスキップ: ${file.name}`, 'warning');
+                    }
+                } catch (error) {
+                    log(`ファイル追加エラー: ${file.name} - ${error.message}`, 'error');
+                    showError(`${file.name}: ${error.message}`);
+                }
+            }
             
-            # 結果を表示
-            logging.info("=" * 50)
-            logging.info("処理結果:")
-            logging.info(f"  総ファイル数: {stats['total']}")
-            logging.info(f"  成功: {stats['success']}")
-            logging.info(f"  失敗: {stats['failed']}")
-            logging.info("=" * 50)
+            selectedFiles.push(...validFiles);
+            updateFileList();
+        }
+        
+        function removeFile(index) {
+            const removedFile = selectedFiles.splice(index, 1)[0];
+            log(`ファイル削除: ${removedFile.name}`);
+            updateFileList();
+        }
+        
+        function updateFileList() {
+            const fileList = document.getElementById('selectedFiles');
+            const processBtn = document.getElementById('processBtn');
             
-            if stats['failed'] > 0:
-                sys.exit(1)
-        else:
-            # 引数がない場合はヘルプを表示
-            parser.print_help()
-            print("\n使用例:")
-            print("  python src/main.py --input ./input_pdfs")
-            print("  python src/main.py --input file.pdf")
-            print("  python src/main.py --input ./input_pdfs --debug")
-    
-    except KeyboardInterrupt:
-        logging.info("処理が中断されました")
-        sys.exit(0)
-    except Exception as e:
-        logging.error(f"予期しないエラーが発生しました: {str(e)}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+            if (selectedFiles.length === 0) {
+                fileList.innerHTML = '';
+                processBtn.disabled = true;
+                return;
+            }
+            
+            processBtn.disabled = false;
+            
+            fileList.innerHTML = selectedFiles.map((file, index) => `
+                <div class="file-item">
+                    <div class="file-info">
+                        <div class="file-icon">📄</div>
+                        <div>
+                            <div class="file-name">${file.name}</div>
+                            <div class="file-size">${formatFileSize(file.size)}</div>
+                        </div>
+                    </div>
+                    <button class="remove-btn" onclick="removeFile(${index})">削除</button>
+                </div>
+            `).join('');
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function updateProgress(current, total) {
+            const progress = (current / total) * 100;
+            const progressFill = document.getElementById('progressFill');
+            const loadingText = document.getElementById('loadingText');
+            
+            progressFill.style.width = `${progress}%`;
+            loadingText.textContent = `処理中... (${current}/${total})`;
+        }
+        
+        async function processFiles() {
+            if (selectedFiles.length === 0) return;
+            
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const processBtn = document.getElementById('processBtn');
+            
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            processBtn.disabled = true;
+            
+            log(`ファイル処理開始: ${selectedFiles.length}個のファイル`);
+            
+            try {
+                // 複数ファイルの場合は process-multiple を使用
+                if (selectedFiles.length > 1) {
+                    await processMultipleFiles();
+                } else {
+                    await processSingleFile();
+                }
+                
+            } catch (error) {
+                log(`処理エラー: ${error.message}`, 'error');
+                showError('処理中にエラーが発生しました: ' + error.message);
+            } finally {
+                loading.style.display = 'none';
+                processBtn.disabled = false;
+            }
+        }
+        
+        async function processSingleFile() {
+            const file = selectedFiles[0];
+            updateProgress(0, 1);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            log(`単一ファイル処理: ${file.name}`);
+            
+            const response = await fetch(API_ENDPOINTS.process, {
+                method: 'POST',
+                body: formData
+            });
+            
+            updateProgress(1, 1);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                log(`API エラー ${response.status}: ${errorText}`, 'error');
+                throw new Error(`API Error ${response.status}: ${errorText}`);
+            }
+            
+            const data = await response.json();
+            showResults([{
+                success: data.success,
+                original_filename: data.original_filename,
+                new_filename: data.new_filename,
+                extracted_info: data.extracted_info,
+                error: data.error
+            }]);
+        }
+        
+        async function processMultipleFiles() {
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+            
+            log(`複数ファイル処理: ${selectedFiles.length}個のファイル`);
+            updateProgress(0, selectedFiles.length);
+            
+            const response = await fetch(API_ENDPOINTS.processMultiple, {
+                method: 'POST',
+                body: formData
+            });
+            
+            updateProgress(selectedFiles.length, selectedFiles.length);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                log(`API エラー ${response.status}: ${errorText}`, 'error');
+                throw new Error(`API Error ${response.status}: ${errorText}`);
+            }
+            
+            const data = await response.json();
+            showResults(data.results);
+        }
+        
+        function showResults(results) {
+            const resultsDiv = document.getElementById('results');
+            
+            const successCount = results.filter(r => r.success).length;
+            const totalCount = results.length;
+            
+            log(`処理完了: ${successCount}/${totalCount} 成功`);
+            
+            const summaryHtml = `
+                <div style="margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h3 style="margin: 0 0 10px 0; color: #333;">処理結果</h3>
+                    <p style="margin: 0 0 15px 0; color: #666;">
+                        総ファイル数: ${totalCount} | 
+                        成功: <span style="color: #28a745;">${successCount}</span> | 
+                        失敗: <span style="color: #dc3545;">${totalCount - successCount}</span>
+                    </p>
+                    ${successCount > 0 ? `
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button onclick="downloadAllFiles()" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer;">
+                                📦 すべてダウンロード (ZIP)
+                            </button>
+                            <button onclick="showFileList()" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer;">
+                                📁 ファイル一覧
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            const resultsHtml = results.map(result => `
+                <div class="result-item ${result.success ? 'result-success' : 'result-error'}">
+                    <div class="original-name">📄 ${result.original_filename}</div>
+                    ${result.success ? 
+                        `<div class="new-name">→ ${result.new_filename}</div>
+                         <div style="font-size: 0.8em; color: #666; margin-top: 5px;">
+                           発行機関: ${result.extracted_info?.issuer || '不明'} | 
+                           書類種別: ${result.extracted_info?.document_type || '不明'}
+                         </div>
+                         <div style="margin-top: 10px;">
+                           <button onclick="downloadFile('${result.new_filename}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.8em;">
+                             💾 ダウンロード
+                           </button>
+                         </div>` :
+                        `<div class="error-message">❌ ${result.error}</div>`
+                    }
+                </div>
+            `).join('');
+            
+            resultsDiv.innerHTML = summaryHtml + resultsHtml;
+            resultsDiv.style.display = 'block';
+        }
+        
+        function showError(message) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <div class="result-item result-error">
+                    <div class="error-message">❌ ${message}</div>
+                </div>
+            `;
+            resultsDiv.style.display = 'block';
+        }
+        
+        // 初期化
+        window.addEventListener('load', async () => {
+            log('PDF File Renamer 初期化開始');
+            const connected = await checkApiConnection();
+            
+            if (!connected) {
+                showError('APIサーバーに接続できません。サーバーが起動しているか確認してください。');
+            }
+            
+            log('初期化完了');
+        });
+        
+        // エラーハンドリング
+        window.addEventListener('error', (event) => {
+            log(`グローバルエラー: ${event.error.message}`, 'error');
+        });
+        
+        window.addEventListener('unhandledrejection', (event) => {
+            log(`未処理の Promise エラー: ${event.reason}`, 'error');
+        });
+        
+        // ダウンロード関数
+        async function downloadFile(filename) {
+            try {
+                log(`ファイルダウンロード開始: ${filename}`);
+                
+                const response = await fetch(API_ENDPOINTS.download(filename));
+                
+                if (!response.ok) {
+                    throw new Error(`ダウンロード失敗: ${response.status}`);
+                }
+                
+                // ファイルをダウンロード
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                log(`ダウンロード完了: ${filename}`);
+                
+            } catch (error) {
+                log(`ダウンロードエラー: ${error.message}`, 'error');
+                showError(`ダウンロードに失敗しました: ${error.message}`);
+            }
+        }
+        
+        async function downloadAllFiles() {
+            try {
+                log('一括ダウンロード開始');
+                
+                const response = await fetch(API_ENDPOINTS.downloadAll);
+                
+                if (!response.ok) {
+                    throw new Error(`一括ダウンロード失敗: ${response.status}`);
+                }
+                
+                // ZIPファイルをダウンロード
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'renamed_pdfs.zip';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                log('一括ダウンロード完了');
+                
+            } catch (error) {
+                log(`一括ダウンロードエラー: ${error.message}`, 'error');
+                showError(`一括ダウンロードに失敗しました: ${error.message}`);
+            }
+        }
+        
+        async function showFileList() {
+            try {
+                log('ファイル一覧取得開始');
+                
+                const response = await fetch(API_ENDPOINTS.files);
+                
+                if (!response.ok) {
+                    throw new Error(`ファイル一覧取得失敗: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                const fileListHtml = `
+                    <div style="margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                        <h3 style="margin: 0 0 15px 0; color: #333;">ダウンロード可能なファイル (${data.total_count}個, ${data.total_size_mb}MB)</h3>
+                        ${data.files.map(file => `
+                            <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #007bff;">
+                                <div style="font-weight: 500; margin-bottom: 5px;">${file.filename}</div>
+                                <div style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                                    サイズ: ${file.size_mb}MB | 作成日時: ${new Date(file.created * 1000).toLocaleString()}
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button onclick="downloadFile('${file.filename}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.8em;">
+                                        💾 ダウンロード
+                                    </button>
+                                    <button onclick="deleteFile('${file.filename}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.8em;">
+                                        🗑️ 削除
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML += fileListHtml;
+                
+                log(`ファイル一覧表示: ${data.total_count}個のファイル`);
+                
+            } catch (error) {
+                log(`ファイル一覧取得エラー: ${error.message}`, 'error');
+                showError(`ファイル一覧の取得に失敗しました: ${error.message}`);
+            }
+        }
+        
+        async function deleteFile(filename) {
+            if (!confirm(`${filename} を削除しますか？`)) {
+                return;
+            }
+            
+            try {
+                log(`ファイル削除開始: ${filename}`);
+                
+                const response = await fetch(API_ENDPOINTS.deleteFile(filename), {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`削除失敗: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                log(`ファイル削除完了: ${filename}`);
+                
+                // ファイル一覧を再表示
+                showFileList();
+                
+            } catch (error) {
+                log(`ファイル削除エラー: ${error.message}`, 'error');
+                showError(`ファイル削除に失敗しました: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

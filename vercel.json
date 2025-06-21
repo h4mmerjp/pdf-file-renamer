@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/main.py": {
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "DIFY_API_KEY": "@dify_api_key",
+    "DIFY_API_URL": "@dify_api_url"
+  }
+}

@@ -40,26 +40,44 @@ class DifyClient:
         Dify API接続テスト
         """
         try:
-            # まずファイルエンドポイントをテスト
-            logger.info("ファイルエンドポイント接続テスト...")
-            response = requests.get(
-                self.upload_url.replace('/upload', ''),
-                headers=self.headers,
-                timeout=10
-            )
-            
-            logger.info(f"ファイルエンドポイント レスポンス: {response.status_code}")
-            
-            if response.status_code in [200, 401, 403]:
-                logger.info("Dify API基本接続成功")
-                return True
-            else:
-                logger.error(f"Dify API接続テスト失敗: {response.status_code}")
-                logger.error(f"レスポンス: {response.text}")
+            if not self.api_key:
+                logger.error("APIキーが設定されていません")
                 return False
                 
+            # 基本APIエンドポイントでテスト（200ステータスを返すことが確認済み）
+            logger.info("Dify API接続テスト開始...")
+            test_url = "https://api.dify.ai/v1"
+            
+            response = requests.get(
+                test_url,
+                headers=self.headers,
+                timeout=15
+            )
+            
+            logger.info(f"Dify APIレスポンス: {response.status_code}")
+            
+            if response.status_code == 200:
+                logger.info("✅ Dify API接続成功")
+                return True
+            elif response.status_code == 401:
+                logger.error("❌ APIキーが無効です")
+                return False
+            elif response.status_code == 403:
+                logger.error("❌ APIキーの権限が不足しています")
+                return False
+            else:
+                logger.warning(f"⚠️ 予期しないレスポンス: {response.status_code}")
+                # 404以外で4xx、5xxでなければ接続成功とみなす
+                return response.status_code < 400
+                
+        except requests.exceptions.Timeout:
+            logger.error("❌ Dify API接続タイムアウト")
+            return False
+        except requests.exceptions.ConnectionError:
+            logger.error("❌ Dify APIへの接続に失敗（ネットワークエラー）")
+            return False
         except Exception as e:
-            logger.error(f"Dify API接続テストエラー: {str(e)}")
+            logger.error(f"❌ Dify API接続テストエラー: {str(e)}")
             return False
     
     def upload_file(self, file_path: str) -> Optional[str]:

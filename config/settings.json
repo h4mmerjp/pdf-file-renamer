@@ -1,22 +1,25 @@
 {
   "app": {
     "name": "PDF File Renamer",
-    "version": "1.0.0",
-    "debug": false
+    "version": "1.1.0",
+    "debug": true
   },
   "dify": {
-    "api_url": "https://api.dify.ai/v1/workflows/YOUR_WORKFLOW_ID/run",
-    "api_key": "YOUR_DIFY_API_KEY",
+    "api_url": "https://api.dify.ai/v1/workflows/run",
+    "api_key": "app-SX5RYtfXNxE8kG7FKShngxsp",
     "upload_url": "https://api.dify.ai/v1/files/upload",
     "workflow_file": "./dify_config/医療書類管理notion_practical.yml",
-    "user_id": "pdf-renamer-user"
+    "user_id": "pdf-renamer-user",
+    "timeout": 120
   },
   "file_processing": {
     "input_folder": "./input_pdfs",
     "output_folder": "./downloads",
     "temp_folder": "./temp",
     "max_file_size_mb": 15,
-    "allowed_extensions": [".pdf", ".PDF"]
+    "allowed_extensions": [".pdf", ".PDF"],
+    "cleanup_temp_files": true,
+    "batch_size": 10
   },
   "naming_rules": {
     "pattern": "{date}_{issuer}_{document_type}",
@@ -24,7 +27,8 @@
     "max_filename_length": 255,
     "invalid_chars": ["<", ">", ":", "\"", "/", "\\", "|", "?", "*"],
     "replacement_char": "_",
-    "use_japanese_names": true
+    "use_japanese_names": true,
+    "avoid_duplicates": true
   },
   "issuers": {
     "国民健康保険団体連合会": "国民健康保険団体連合会",
@@ -32,6 +36,9 @@
     "厚生労働省": "厚生労働省",
     "保険者": "保険者",
     "医療機関": "医療機関",
+    "病院": "医療機関",
+    "クリニック": "医療機関",
+    "薬局": "医療機関",
     "その他": "その他"
   },
   "document_types": {
@@ -46,6 +53,9 @@
     "保険過誤調整結果通知書": "保険過誤調整結果通知書",
     "資格確認結果連絡書": "資格確認結果連絡書",
     "当座口振込通知書": "当座口振込通知書",
+    "医療費領収書": "医療費領収書",
+    "薬剤情報提供文書": "薬剤情報提供文書",
+    "検査結果": "検査結果",
     "その他": "その他"
   },
   "google_drive": {
@@ -56,10 +66,32 @@
     "folder_name": "PDF_Renamed_Files",
     "create_date_folders": true
   },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "cors_origins": ["*"],
+    "rate_limit": {
+      "enabled": false,
+      "requests_per_minute": 60
+    }
+  },
   "logging": {
-    "level": "INFO",
+    "level": "DEBUG",
     "file": "./logs/app.log",
     "max_file_size_mb": 10,
-    "backup_count": 5
+    "backup_count": 5,
+    "console_output": true,
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  },
+  "error_handling": {
+    "retry_attempts": 3,
+    "retry_delay": 1,
+    "fallback_naming": true,
+    "save_failed_files": true
+  },
+  "performance": {
+    "concurrent_processing": false,
+    "max_workers": 3,
+    "memory_limit_mb": 512
   }
 }
