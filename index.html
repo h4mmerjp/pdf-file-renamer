@@ -26,7 +26,7 @@
         border-radius: 20px;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         padding: 40px;
-        max-width: 600px;
+        max-width: 900px;
         width: 100%;
       }
 
@@ -55,6 +55,7 @@
         padding: 10px 15px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         font-size: 0.9em;
+        z-index: 1000;
       }
 
       .status-connected {
@@ -80,6 +81,12 @@
       .upload-area:hover {
         border-color: #667eea;
         background-color: #f8f9ff;
+      }
+
+      .upload-area.dragover {
+        border-color: #667eea;
+        background-color: #f0f2ff;
+        transform: scale(1.02);
       }
 
       .upload-icon {
@@ -120,6 +127,7 @@
       .file-info {
         display: flex;
         align-items: center;
+        flex: 1;
       }
 
       .file-icon {
@@ -128,15 +136,19 @@
         font-size: 1.2em;
       }
 
+      .file-details {
+        flex: 1;
+      }
+
       .file-name {
         font-weight: 500;
         color: #333;
+        margin-bottom: 2px;
       }
 
       .file-size {
         color: #666;
         font-size: 0.9em;
-        margin-left: 10px;
       }
 
       .remove-btn {
@@ -161,9 +173,10 @@
         cursor: pointer;
         transition: all 0.3s ease;
         margin-top: 20px;
+        position: relative;
       }
 
-      .process-btn:hover {
+      .process-btn:hover:not(:disabled) {
         transform: translateY(-2px);
         box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
       }
@@ -175,13 +188,156 @@
         box-shadow: none;
       }
 
-      .error-message {
-        background: #f8d7da;
-        color: #721c24;
+      .process-btn.processing {
+        background: #ffc107;
+        color: #856404;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 10px;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      .message {
         padding: 15px;
         border-radius: 8px;
         margin: 20px 0;
+      }
+
+      .error-message {
+        background: #f8d7da;
+        color: #721c24;
         border: 1px solid #f5c6cb;
+      }
+
+      .success-message {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .warning-message {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 8px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+        margin: 15px 0;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        transition: width 0.3s ease;
+        border-radius: 4px;
+      }
+
+      .results-container {
+        margin-top: 30px;
+      }
+
+      .result-item {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        border-left: 4px solid #28a745;
+      }
+
+      .result-item.error {
+        border-left-color: #dc3545;
+      }
+
+      .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+
+      .result-filename {
+        font-weight: 600;
+        color: #333;
+      }
+
+      .result-status {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.8em;
+        font-weight: 500;
+      }
+
+      .status-success {
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .status-error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      .result-details {
+        color: #666;
+        font-size: 0.9em;
+        line-height: 1.6;
+        margin-bottom: 15px;
+      }
+
+      .result-analysis {
+        background: #e9ecef;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        font-size: 0.85em;
+      }
+
+      .download-btn {
+        background: #28a745;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 0.85em;
+        margin-right: 5px;
+      }
+
+      .download-btn:hover {
+        background: #218838;
+      }
+
+      .download-all-btn {
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 20px;
+        cursor: pointer;
+        font-size: 1em;
+        margin-top: 20px;
+        width: 100%;
+      }
+
+      .download-all-btn:hover {
+        background: #0056b3;
       }
 
       .feature-grid {
@@ -214,6 +370,33 @@
         color: #666;
         font-size: 0.9em;
       }
+
+      .summary-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+
+      .stat-card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
+        border: 1px solid #e9ecef;
+      }
+
+      .stat-number {
+        font-size: 1.5em;
+        font-weight: 700;
+        color: #333;
+      }
+
+      .stat-label {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 5px;
+      }
     </style>
   </head>
   <body>
@@ -229,12 +412,13 @@
 
       <div
         class="upload-area"
+        id="uploadArea"
         onclick="document.getElementById('fileInput').click()"
       >
         <div class="upload-icon">📄</div>
         <div class="upload-text">PDFファイルをドラッグ&ドロップ</div>
         <div class="upload-subtext">
-          または クリックしてファイルを選択（10MB以下、PDF形式）
+          または クリックしてファイルを選択（10MB以下、PDF形式、最大5ファイル）
         </div>
         <input
           type="file"
@@ -248,6 +432,10 @@
 
       <div class="selected-files" id="selectedFiles"></div>
 
+      <div class="progress-bar" id="progressBar" style="display: none;">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+
       <button
         class="process-btn"
         id="processBtn"
@@ -257,288 +445,19 @@
         ファイルを処理する
       </button>
 
-      <div id="errorDisplay"></div>
+      <div id="messageDisplay"></div>
+
+      <div class="results-container" id="resultsContainer" style="display: none;">
+        <h3>処理結果</h3>
+        <div class="summary-stats" id="summaryStats"></div>
+        <div id="resultsList"></div>
+        <button class="download-all-btn" onclick="downloadAllFiles()" style="display: none;" id="downloadAllBtn">
+          すべてのファイルをZIPでダウンロード
+        </button>
+      </div>
 
       <div class="feature-grid">
         <div class="feature-card">
           <div class="feature-icon">🤖</div>
           <div class="feature-title">AI自動分析</div>
-          <div class="feature-desc">Dify AIが発行機関と書類種別を自動識別</div>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">📅</div>
-          <div class="feature-title">日本語ファイル名</div>
-          <div class="feature-desc">
-            日付_発行機関_書類種別の分かりやすい形式
-          </div>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">⚡</div>
-          <div class="feature-title">一括処理</div>
-          <div class="feature-desc">複数のPDFファイルを同時に処理可能</div>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      let selectedFiles = [];
-
-      // 状態表示更新
-      function updateStatus(status, text) {
-        const indicator = document.getElementById("statusIndicator");
-        const statusText = document.getElementById("statusText");
-
-        indicator.className = `status-indicator status-${status}`;
-        statusText.textContent = text;
-      }
-
-      // エラー表示
-      function showError(message) {
-        const errorDiv = document.getElementById("errorDisplay");
-        errorDiv.innerHTML = `<div class="error-message">❌ ${message}</div>`;
-      }
-
-      // API接続テスト
-      async function testApiConnection() {
-        const testEndpoints = [
-          { url: "/api/hello", name: "Hello API" },
-          { url: "/api/health", name: "Health Check" },
-          { url: "/api/test-dify", name: "Dify Connection Test" },
-        ];
-
-        console.log("=== Node.js API接続テスト開始 ===");
-        console.log("ベースURL:", window.location.origin);
-
-        let successCount = 0;
-        let workingEndpoint = null;
-
-        for (const endpoint of testEndpoints) {
-          try {
-            console.log(`Testing: ${endpoint.name} (${endpoint.url})`);
-
-            const response = await fetch(endpoint.url, {
-              method: "GET",
-              cache: "no-cache",
-              headers: {
-                Accept: "application/json",
-              },
-            });
-
-            console.log(
-              `${endpoint.name} - Status: ${response.status} ${response.statusText}`
-            );
-
-            if (response.ok) {
-              const data = await response.json();
-              console.log(`${endpoint.name} success:`, data);
-              successCount++;
-
-              if (!workingEndpoint) {
-                workingEndpoint = endpoint.name;
-              }
-
-              // Dify接続テストの結果を特別に処理
-              if (
-                endpoint.url === "/api/test-dify" &&
-                data.dify_connection === "connected"
-              ) {
-                updateStatus(
-                  "connected",
-                  `Dify API接続OK - ${workingEndpoint}`
-                );
-              } else if (successCount === 1) {
-                updateStatus("connected", `API接続OK - ${workingEndpoint}`);
-              }
-            } else {
-              const errorText = await response.text();
-              console.log(`${endpoint.name} error response:`, errorText);
-            }
-          } catch (error) {
-            console.log(`${endpoint.name} failed:`, error.message);
-          }
-
-          // 各テストの間に少し待機
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
-
-        console.log(
-          `=== テスト結果: ${successCount}/${testEndpoints.length} 成功 ===`
-        );
-
-        if (successCount === 0) {
-          updateStatus("disconnected", "API接続エラー");
-          showError(
-            "すべてのAPIエンドポイントに接続できませんでした。Vercel関数の設定を確認してください。"
-          );
-
-          // デバッグ情報を表示
-          console.log("デバッグ情報:");
-          console.log("- ホスト:", window.location.hostname);
-          console.log("- プロトコル:", window.location.protocol);
-          console.log("- フルURL:", window.location.href);
-
-          return false;
-        }
-
-        return true;
-      }
-
-      // ファイル選択処理
-      function handleFileSelect(event) {
-        const files = Array.from(event.target.files);
-        addFiles(files);
-      }
-
-      function addFiles(files) {
-        for (const file of files) {
-          if (
-            file.type === "application/pdf" &&
-            file.size <= 10 * 1024 * 1024
-          ) {
-            const isDuplicate = selectedFiles.some(
-              (f) => f.name === file.name && f.size === file.size
-            );
-
-            if (!isDuplicate) {
-              selectedFiles.push(file);
-            }
-          }
-        }
-        updateFileList();
-      }
-
-      function removeFile(index) {
-        selectedFiles.splice(index, 1);
-        updateFileList();
-      }
-
-      function updateFileList() {
-        const fileList = document.getElementById("selectedFiles");
-        const processBtn = document.getElementById("processBtn");
-
-        if (selectedFiles.length === 0) {
-          fileList.innerHTML = "";
-          processBtn.disabled = true;
-          return;
-        }
-
-        processBtn.disabled = false;
-
-        fileList.innerHTML = selectedFiles
-          .map(
-            (file, index) => `
-                <div class="file-item">
-                    <div class="file-info">
-                        <div class="file-icon">📄</div>
-                        <div>
-                            <div class="file-name">${file.name}</div>
-                            <div class="file-size">${formatFileSize(
-                              file.size
-                            )}</div>
-                        </div>
-                    </div>
-                    <button class="remove-btn" onclick="removeFile(${index})">削除</button>
-                </div>
-            `
-          )
-          .join("");
-      }
-
-      function formatFileSize(bytes) {
-        if (bytes === 0) return "0 Bytes";
-        const k = 1024;
-        const sizes = ["Bytes", "KB", "MB", "GB"];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-      }
-
-      async function processFiles() {
-        if (selectedFiles.length === 0) {
-          showError("ファイルが選択されていません。");
-          return;
-        }
-
-        console.log("ファイル処理開始:", selectedFiles.length, "個のファイル");
-
-        try {
-          // テスト用のPOSTリクエスト
-          const response = await fetch("/api/process", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              files: selectedFiles.map((f) => ({
-                name: f.name,
-                size: f.size,
-                type: f.type,
-              })),
-              timestamp: new Date().toISOString(),
-            }),
-          });
-
-          console.log(
-            "Process API Response:",
-            response.status,
-            response.statusText
-          );
-
-          if (response.ok) {
-            const data = await response.json();
-            console.log("Process API Success:", data);
-
-            // 成功時の表示
-            const errorDiv = document.getElementById("errorDisplay");
-            errorDiv.innerHTML = `
-                        <div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #c3e6cb;">
-                            ✅ ${data.message}<br>
-                            <small>ステータス: ${data.status}<br>
-                            タイムスタンプ: ${data.timestamp}</small>
-                        </div>
-                    `;
-          } else {
-            const errorData = await response.json();
-            showError(
-              `処理エラー (${response.status}): ${
-                errorData.message || errorData.error
-              }`
-            );
-          }
-        } catch (error) {
-          console.error("Process error:", error);
-          showError(`処理中にエラーが発生しました: ${error.message}`);
-        }
-      }
-
-      // ドラッグ&ドロップ機能
-      const uploadArea = document.querySelector(".upload-area");
-
-      uploadArea.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        uploadArea.style.borderColor = "#667eea";
-        uploadArea.style.backgroundColor = "#f0f2ff";
-      });
-
-      uploadArea.addEventListener("dragleave", () => {
-        uploadArea.style.borderColor = "#ddd";
-        uploadArea.style.backgroundColor = "";
-      });
-
-      uploadArea.addEventListener("drop", (e) => {
-        e.preventDefault();
-        uploadArea.style.borderColor = "#ddd";
-        uploadArea.style.backgroundColor = "";
-        const files = Array.from(e.dataTransfer.files).filter(
-          (file) => file.type === "application/pdf"
-        );
-        addFiles(files);
-      });
-
-      // 初期化
-      window.addEventListener("load", () => {
-        console.log("PDF File Renamer 初期化開始");
-        testApiConnection();
-      });
-    </script>
-  </body>
-</html>
+          <div class
