@@ -1,4 +1,4 @@
-// PDF処理API (新ワークフロー対応版)
+// PDF処理API (修正版 - 正しいDifyファイルアップロード対応)
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
           throw new Error("ファイルサイズが10MBを超えています");
         }
 
-        // Dify APIでPDF処理
+        // 正しいDify API処理
         const difyResult = await processPDFWithDify(
           buffer,
           file.name,
@@ -166,11 +166,12 @@ function validateFile(file) {
   return null;
 }
 
+// 正しいDify API処理（記事の内容に基づく）
 async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
   console.log(`📤 Starting Dify API processing for: ${filename}`);
 
   try {
-    // 1段階目: ファイルアップロード
+    // 1段階目: ファイルアップロードAPI（正しい方式）
     console.log("🔄 Step 1: Uploading file to Dify...");
 
     const uploadFormData = new FormData();
@@ -178,6 +179,7 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
     uploadFormData.append("file", blob, filename);
     uploadFormData.append("user", "universal-doc-processor");
 
+    // 正しいDifyファイルアップロードエンドポイント
     const uploadResponse = await fetch("https://api.dify.ai/v1/files/upload", {
       method: "POST",
       headers: {
@@ -193,18 +195,31 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
       console.error(
         `❌ Upload failed: ${uploadResponse.status} - ${errorText}`
       );
-      throw new Error(`ファイルアップロードエラー (${uploadResponse.status})`);
+      throw new Error(
+        `ファイルアップロードエラー (${
+          uploadResponse.status
+        }): ${errorText.substring(0, 200)}`
+      );
     }
 
     const uploadResult = await uploadResponse.json();
-    console.log("📤 Upload success:", { id: uploadResult.id });
+    console.log("📤 Upload success:", {
+      id: uploadResult.id,
+      name: uploadResult.name,
+      size: uploadResult.size,
+      created_at: uploadResult.created_at,
+    });
 
-    // 2段階目: ワークフロー実行
+    // 2段階目: ワークフローAPI（正しい形式）
     console.log("⚙️ Step 2: Running workflow...");
 
     const workflowData = {
       inputs: {
-        file: uploadResult.id,
+        file: {
+          type: "document", // PDFなのでdocument
+          transfer_method: "local_file", // ローカルファイル
+          upload_file_id: uploadResult.id, // アップロードで取得したID
+        },
       },
       response_mode: "blocking",
       user: "universal-doc-processor",
@@ -228,7 +243,11 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
       console.error(
         `❌ Workflow failed: ${workflowResponse.status} - ${errorText}`
       );
-      throw new Error(`ワークフロー実行エラー (${workflowResponse.status})`);
+      throw new Error(
+        `ワークフロー実行エラー (${
+          workflowResponse.status
+        }): ${errorText.substring(0, 200)}`
+      );
     }
 
     const workflowResult = await workflowResponse.json();
