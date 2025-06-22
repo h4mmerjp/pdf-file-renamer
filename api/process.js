@@ -166,24 +166,31 @@ function validateFile(file) {
   return null;
 }
 
-// 正しいDify API処理（記事の内容に基づく）
+// 正しいDify API処理（記事の内容に基づく修正版）
 async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
   console.log(`📤 Starting Dify API processing for: ${filename}`);
 
   try {
-    // 1段階目: ファイルアップロードAPI（正しい方式）
+    // 1段階目: ファイルアップロードAPI（記事の通りの正しい方式）
     console.log("🔄 Step 1: Uploading file to Dify...");
 
+    // FormDataの正しい作成方法（Node.js環境用）
+    const FormData = await import("form-data").then((mod) => mod.default);
     const uploadFormData = new FormData();
-    const blob = new Blob([fileBuffer], { type: "application/pdf" });
-    uploadFormData.append("file", blob, filename);
-    uploadFormData.append("user", "universal-doc-processor");
+
+    // ファイルをFormDataに追加
+    uploadFormData.append("file", fileBuffer, {
+      filename: filename,
+      contentType: "application/pdf",
+    });
+    uploadFormData.append("user", "pdf-file-renamer-user");
 
     // 正しいDifyファイルアップロードエンドポイント
     const uploadResponse = await fetch("https://api.dify.ai/v1/files/upload", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
+        ...uploadFormData.getHeaders(), // Content-Typeは自動設定
       },
       body: uploadFormData,
     });
@@ -210,22 +217,29 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
       created_at: uploadResult.created_at,
     });
 
-    // 2段階目: ワークフローAPI（正しい形式）
+    // 2段階目: ワークフローAPI（記事の通りの正しい形式）
     console.log("⚙️ Step 2: Running workflow...");
 
+    // YAMLファイルの変数名を確認 - "file" が正しい変数名
     const workflowData = {
       inputs: {
-        file: {
-          type: "document", // PDFなのでdocument
-          transfer_method: "local_file", // ローカルファイル
-          upload_file_id: uploadResult.id, // アップロードで取得したID
-        },
+        file: [
+          {
+            // 配列形式で送信（file-list型）
+            type: "document", // PDFなのでdocument
+            transfer_method: "local_file", // ローカルファイル
+            upload_file_id: uploadResult.id, // アップロードで取得したID
+          },
+        ],
       },
       response_mode: "blocking",
-      user: "universal-doc-processor",
+      user: "pdf-file-renamer-user",
     };
 
-    console.log("⚙️ Workflow request data:", workflowData);
+    console.log(
+      "⚙️ Workflow request data:",
+      JSON.stringify(workflowData, null, 2)
+    );
 
     const workflowResponse = await fetch(apiUrl, {
       method: "POST",
@@ -252,10 +266,11 @@ async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
 
     const workflowResult = await workflowResponse.json();
     console.log(
-      "⚙️ Workflow success. Data structure:",
-      Object.keys(workflowResult)
+      "⚙️ Workflow success. Full response:",
+      JSON.stringify(workflowResult, null, 2)
     );
 
+    // レスポンス構造の詳細ログ
     if (workflowResult.data) {
       console.log("📊 Workflow data keys:", Object.keys(workflowResult.data));
       if (workflowResult.data.outputs) {
