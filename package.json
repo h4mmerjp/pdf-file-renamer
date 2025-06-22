@@ -1,11 +1,14 @@
 {
   "name": "pdf-file-renamer",
   "version": "1.0.0",
+  "description": "PDFファイルをAIで自動分析してリネームするアプリ",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=18.0.0"
   },
   "dependencies": {
-    "form-data": "^4.0.0"
+    "formidable": "^3.5.1",
+    "form-data": "^4.0.0",
+    "node-fetch": "^2.7.0"
   }
 }

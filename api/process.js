@@ -1,114 +1,202 @@
-// PDF処理API (修正版 - 正しいDifyファイルアップロード対応)
+// PDF処理API (修正版 - BASE_URL対応)
+import formidable from "formidable";
+import fs from "fs";
+import FormData from "form-data";
+import fetch from "node-fetch";
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   if (req.method !== "POST") {
-    res.status(405).json({
-      success: false,
+    return res.status(405).json({
       error: "Method not allowed",
-      message: "このエンドポイントはPOSTメソッドのみ対応しています",
+      debug: `Received method: ${req.method}, expected: POST`,
     });
-    return;
-  }
-
-  const apiKey = process.env.DIFY_API_KEY;
-  const apiUrl = process.env.DIFY_API_URL;
-
-  if (!apiKey || !apiUrl) {
-    res.status(500).json({
-      success: false,
-      error: "Configuration error",
-      message: "Dify API設定が不完全です。環境変数を確認してください。",
-    });
-    return;
   }
 
   try {
-    const { files } = req.body;
+    console.log("=== PDF HANDLER START ===");
+    console.log("Starting PDF processing...");
+    console.log("Environment check:");
+    console.log("- DIFY_API_KEY exists:", !!process.env.DIFY_API_KEY);
+    console.log("- DIFY_BASE_URL:", process.env.DIFY_BASE_URL);
 
-    if (!files || !Array.isArray(files) || files.length === 0) {
-      res.status(400).json({
-        success: false,
-        error: "No files provided",
-        message: "処理するファイルが指定されていません",
+    // FormDataでファイルを受信
+    const form = formidable({
+      maxFileSize: 15 * 1024 * 1024, // 15MB制限
+      keepExtensions: true,
+    });
+
+    const [fields, files] = await form.parse(req);
+    console.log("Files parsed:", Object.keys(files));
+
+    // JSONリクエストの場合の処理
+    if (
+      !files.file &&
+      req.headers["content-type"]?.includes("application/json")
+    ) {
+      console.log("Processing JSON request...");
+      const rawData = [];
+      req.on("data", (chunk) => rawData.push(chunk));
+      req.on("end", () => {
+        const body = Buffer.concat(rawData).toString();
+        const { files: jsonFiles } = JSON.parse(body);
+        return processJSONFiles(jsonFiles, res);
       });
       return;
     }
 
-    if (files.length > 5) {
-      res.status(400).json({
-        success: false,
-        error: "Too many files",
-        message: "一度に処理できるファイルは5個までです",
+    const uploadedFile = files.file?.[0];
+    if (!uploadedFile) {
+      return res.status(400).json({
+        error: "No file uploaded",
+        debug: "files object does not contain a file property",
       });
-      return;
     }
 
-    console.log(`📄 Processing ${files.length} files...`);
+    console.log("File details:", {
+      originalFilename: uploadedFile.originalFilename,
+      size: uploadedFile.size,
+      mimetype: uploadedFile.mimetype,
+    });
+
+    // PDFファイルの検証
+    if (uploadedFile.mimetype !== "application/pdf") {
+      return res.status(400).json({
+        error: "Invalid file type",
+        debug: `Expected PDF but got ${uploadedFile.mimetype}`,
+      });
+    }
+
+    // 1. Difyにファイルアップロード
+    console.log("=== STEP 1: UPLOAD TO DIFY ===");
+    const uploadResult = await uploadFileToDify(uploadedFile);
+
+    if (!uploadResult.success) {
+      console.error("Upload failed:", uploadResult);
+      return res.status(400).json({
+        error: "File upload to Dify failed",
+        debug: uploadResult.debug,
+        difyError: uploadResult.error,
+      });
+    }
+
+    console.log("File uploaded successfully, ID:", uploadResult.fileId);
+
+    // 2. ワークフロー実行
+    console.log("=== STEP 2: RUN WORKFLOW ===");
+    const workflowResult = await runDifyWorkflow(uploadResult.fileId);
+
+    if (!workflowResult.success) {
+      console.error("Workflow execution failed:", workflowResult);
+      return res.status(500).json({
+        error: "Workflow execution failed",
+        debug: workflowResult.debug,
+        difyError: workflowResult.error,
+      });
+    }
+
+    console.log("Workflow completed successfully");
+    console.log("Extracted data:", workflowResult.data);
+
+    // 3. ファイル名生成
+    const newFilename = generateFilename(
+      workflowResult.data,
+      uploadedFile.originalFilename
+    );
+
+    // 4. 結果を返す
+    res.status(200).json({
+      success: true,
+      message: "PDF処理が完了しました",
+      timestamp: new Date().toISOString(),
+      results: [
+        {
+          original_filename: uploadedFile.originalFilename,
+          new_filename: newFilename,
+          analysis: workflowResult.data,
+          status: "success",
+        },
+      ],
+      debug: {
+        fileId: uploadResult.fileId,
+        workflowExecuted: true,
+        extractedParams: workflowResult.data,
+      },
+    });
+  } catch (error) {
+    console.error("Handler error:", error);
+    console.error("Error stack:", error.stack);
+    res.status(500).json({
+      error: "Internal server error",
+      debug: error.message,
+      errorType: error.constructor.name,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+}
+
+// JSONファイルリクエストの処理
+async function processJSONFiles(files, res) {
+  try {
+    console.log(`Processing ${files.length} files from JSON request...`);
     const results = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
       try {
-        console.log(`📋 [${i + 1}/${files.length}] Processing: ${file.name}`);
+        console.log(`Processing file ${i + 1}/${files.length}: ${file.name}`);
 
-        const validationError = validateFile(file);
-        if (validationError) {
-          throw new Error(validationError);
-        }
-
+        // Base64データをバッファに変換
         const base64Data = file.data.split(",")[1];
-        if (!base64Data) {
-          throw new Error("無効なBase64データです");
-        }
-
         const buffer = Buffer.from(base64Data, "base64");
 
-        if (buffer.length > 10 * 1024 * 1024) {
-          throw new Error("ファイルサイズが10MBを超えています");
+        // 一時ファイルを作成
+        const tempFile = {
+          originalFilename: file.name,
+          size: buffer.length,
+          mimetype: "application/pdf",
+          filepath: null,
+        };
+
+        // バッファから直接処理
+        const uploadResult = await uploadBufferToDify(buffer, file.name);
+
+        if (!uploadResult.success) {
+          throw new Error(uploadResult.error);
         }
 
-        // 正しいDify API処理
-        const difyResult = await processPDFWithDify(
-          buffer,
-          file.name,
-          apiKey,
-          apiUrl
-        );
+        const workflowResult = await runDifyWorkflow(uploadResult.fileId);
 
-        // 新しいファイル名を生成
-        const newFilename = generateFilename(difyResult, file.name);
+        if (!workflowResult.success) {
+          throw new Error(workflowResult.error);
+        }
+
+        const newFilename = generateFilename(workflowResult.data, file.name);
 
         results.push({
           original_filename: file.name,
           new_filename: newFilename,
-          analysis: {
-            issuing_organization: difyResult.issuing_organization,
-            document_type: difyResult.document_type,
-            extracted_date: difyResult.document_date,
-            confidence: difyResult.confidence || 0.8,
-          },
+          analysis: workflowResult.data,
           processed_data: file.data,
           status: "success",
         });
-
-        console.log(`✅ Success: ${file.name} -> ${newFilename}`);
-
-        if (i < files.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
       } catch (error) {
-        console.error(`❌ Error processing ${file.name}:`, error.message);
-
+        console.error(`Error processing ${file.name}:`, error);
         results.push({
           original_filename: file.name,
           new_filename: file.name,
@@ -136,255 +224,291 @@ export default async function handler(req, res) {
       },
     });
   } catch (error) {
-    console.error("PDF処理エラー:", error);
+    console.error("JSON processing error:", error);
     res.status(500).json({
-      success: false,
-      error: "Internal server error",
-      message: "PDF処理中にエラーが発生しました",
-      details: error.message,
-      timestamp: new Date().toISOString(),
+      error: "JSON processing failed",
+      debug: error.message,
     });
   }
 }
 
-function validateFile(file) {
-  if (!file.name) return "ファイル名が指定されていません";
-  if (!file.data) return "ファイルデータが指定されていません";
+// Difyにファイルをアップロード（ファイルパス版）
+async function uploadFileToDify(file) {
+  try {
+    console.log("Creating FormData for upload...");
+    const formData = new FormData();
+    const fileStream = fs.createReadStream(file.filepath);
 
-  const allowedExtensions = [".pdf"];
-  const extension = file.name.toLowerCase().split(".").pop();
-  if (!allowedExtensions.includes(`.${extension}`)) {
-    return `サポートされていないファイル形式です（対応形式: ${allowedExtensions.join(
-      ", "
-    )}）`;
+    formData.append("file", fileStream, {
+      filename: file.originalFilename,
+      contentType: file.mimetype,
+    });
+    formData.append("user", "pdf-renamer-user");
+
+    console.log("Sending file to Dify upload endpoint...");
+    console.log("Upload URL:", `${process.env.DIFY_BASE_URL}/files/upload`);
+
+    const response = await fetch(`${process.env.DIFY_BASE_URL}/files/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+        ...formData.getHeaders(),
+      },
+      body: formData,
+    });
+
+    const responseText = await response.text();
+    console.log("Dify upload response status:", response.status);
+    console.log("Dify upload response body:", responseText);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `HTTP ${response.status}`,
+        debug: `Upload failed with status ${response.status}. Response: ${responseText}`,
+      };
+    }
+
+    const result = JSON.parse(responseText);
+
+    if (!result.id) {
+      return {
+        success: false,
+        error: "No file ID returned",
+        debug: `Response missing ID field. Full response: ${responseText}`,
+      };
+    }
+
+    return {
+      success: true,
+      fileId: result.id,
+      debug: `File uploaded successfully with ID: ${result.id}`,
+    };
+  } catch (error) {
+    console.error("Upload error:", error);
+    return {
+      success: false,
+      error: error.message,
+      debug: `Upload exception: ${error.message}`,
+      stack: error.stack,
+    };
   }
-
-  if (!file.data.startsWith("data:application/pdf;base64,")) {
-    return "無効なPDFファイル形式です";
-  }
-
-  return null;
 }
 
-// 正しいDify API処理（記事の内容に基づく修正版）
-async function processPDFWithDify(fileBuffer, filename, apiKey, apiUrl) {
-  console.log(`📤 Starting Dify API processing for: ${filename}`);
-
+// Difyにバッファをアップロード（Base64データ版）
+async function uploadBufferToDify(buffer, filename) {
   try {
-    // 1段階目: ファイルアップロードAPI（記事の通りの正しい方式）
-    console.log("🔄 Step 1: Uploading file to Dify...");
+    console.log(`Creating FormData for buffer upload: ${filename}`);
+    const formData = new FormData();
 
-    // FormDataの正しい作成方法（Node.js環境用）
-    const FormData = await import("form-data").then((mod) => mod.default);
-    const uploadFormData = new FormData();
-
-    // ファイルをFormDataに追加
-    uploadFormData.append("file", fileBuffer, {
+    formData.append("file", buffer, {
       filename: filename,
       contentType: "application/pdf",
     });
-    uploadFormData.append("user", "pdf-file-renamer-user");
+    formData.append("user", "pdf-renamer-user");
 
-    // 正しいDifyファイルアップロードエンドポイント
-    const uploadResponse = await fetch("https://api.dify.ai/v1/files/upload", {
+    console.log("Sending buffer to Dify upload endpoint...");
+
+    const response = await fetch(`${process.env.DIFY_BASE_URL}/files/upload`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
-        ...uploadFormData.getHeaders(), // Content-Typeは自動設定
+        Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+        ...formData.getHeaders(),
       },
-      body: uploadFormData,
+      body: formData,
     });
 
-    console.log(`📤 Upload response status: ${uploadResponse.status}`);
+    const responseText = await response.text();
+    console.log("Dify buffer upload response status:", response.status);
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error(
-        `❌ Upload failed: ${uploadResponse.status} - ${errorText}`
-      );
-      throw new Error(
-        `ファイルアップロードエラー (${
-          uploadResponse.status
-        }): ${errorText.substring(0, 200)}`
-      );
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `HTTP ${response.status}`,
+        debug: `Buffer upload failed with status ${response.status}. Response: ${responseText}`,
+      };
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log("📤 Upload success:", {
-      id: uploadResult.id,
-      name: uploadResult.name,
-      size: uploadResult.size,
-      created_at: uploadResult.created_at,
-    });
+    const result = JSON.parse(responseText);
 
-    // 2段階目: ワークフローAPI（記事の通りの正しい形式）
-    console.log("⚙️ Step 2: Running workflow...");
-
-    // YAMLファイルの変数名を確認 - "file" が正しい変数名
-    const workflowData = {
-      inputs: {
-        file: [
-          {
-            // 配列形式で送信（file-list型）
-            type: "document", // PDFなのでdocument
-            transfer_method: "local_file", // ローカルファイル
-            upload_file_id: uploadResult.id, // アップロードで取得したID
-          },
-        ],
-      },
-      response_mode: "blocking",
-      user: "pdf-file-renamer-user",
-    };
-
-    console.log(
-      "⚙️ Workflow request data:",
-      JSON.stringify(workflowData, null, 2)
-    );
-
-    const workflowResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(workflowData),
-    });
-
-    console.log(`⚙️ Workflow response status: ${workflowResponse.status}`);
-
-    if (!workflowResponse.ok) {
-      const errorText = await workflowResponse.text();
-      console.error(
-        `❌ Workflow failed: ${workflowResponse.status} - ${errorText}`
-      );
-      throw new Error(
-        `ワークフロー実行エラー (${
-          workflowResponse.status
-        }): ${errorText.substring(0, 200)}`
-      );
+    if (!result.id) {
+      return {
+        success: false,
+        error: "No file ID returned",
+        debug: `Response missing ID field. Full response: ${responseText}`,
+      };
     }
-
-    const workflowResult = await workflowResponse.json();
-    console.log(
-      "⚙️ Workflow success. Full response:",
-      JSON.stringify(workflowResult, null, 2)
-    );
-
-    // レスポンス構造の詳細ログ
-    if (workflowResult.data) {
-      console.log("📊 Workflow data keys:", Object.keys(workflowResult.data));
-      if (workflowResult.data.outputs) {
-        console.log("📋 Workflow outputs:", workflowResult.data.outputs);
-      }
-    }
-
-    const outputs = workflowResult.data?.outputs || {};
-
-    console.log("🔍 Extracted values:", {
-      issuing_organization: outputs.issuing_organization,
-      document_type: outputs.document_type,
-      document_date: outputs.document_date,
-      document_name: outputs.document_name,
-    });
 
     return {
-      issuing_organization: outputs.issuing_organization || "不明機関",
-      document_type: outputs.document_type || "その他書類",
-      document_date: outputs.document_date || formatCurrentDate(),
-      document_name: outputs.document_name || "不明書類",
-      confidence: calculateConfidence(outputs),
-      raw_response: workflowResult,
+      success: true,
+      fileId: result.id,
+      debug: `Buffer uploaded successfully with ID: ${result.id}`,
     };
   } catch (error) {
-    console.error("❌ Dify API処理エラー:", error);
-
-    const fallbackResult = {
-      issuing_organization: inferOrganizationFromFilename(filename),
-      document_type: inferDocumentTypeFromFilename(filename),
-      document_date: formatCurrentDate(),
-      document_name: `${inferOrganizationFromFilename(
-        filename
-      )}_${inferDocumentTypeFromFilename(filename)}`,
-      confidence: 0.3,
+    console.error("Buffer upload error:", error);
+    return {
+      success: false,
       error: error.message,
-      fallback: true,
+      debug: `Buffer upload exception: ${error.message}`,
+    };
+  }
+}
+
+// ワークフロー実行
+async function runDifyWorkflow(fileId) {
+  try {
+    // YAMLファイルの設定に基づいた正しいリクエスト形式
+    const requestBody = {
+      inputs: {
+        file: {
+          type: "document",
+          transfer_method: "local_file",
+          upload_file_id: fileId,
+        },
+      },
+      response_mode: "blocking",
+      user: "pdf-renamer-user",
     };
 
-    console.log("🔄 Using fallback analysis:", fallbackResult);
-    return fallbackResult;
+    console.log("Workflow URL:", `${process.env.DIFY_BASE_URL}/workflows/run`);
+    console.log("Sending workflow request...");
+    console.log("Request body:", JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch(`${process.env.DIFY_BASE_URL}/workflows/run`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const responseText = await response.text();
+    console.log("Workflow response status:", response.status);
+    console.log("Workflow response text:", responseText.substring(0, 500));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: `HTTP ${response.status}`,
+        debug: `Workflow failed with status ${
+          response.status
+        }. Response: ${responseText.substring(0, 500)}...`,
+      };
+    }
+
+    // JSON解析
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      return {
+        success: false,
+        error: "Invalid JSON response",
+        debug: `JSON parse failed: ${
+          parseError.message
+        }. Response: ${responseText.substring(0, 200)}`,
+      };
+    }
+
+    // ワークフローの状態を確認
+    if (result.data && result.data.status === "failed") {
+      return {
+        success: false,
+        error: result.data.error || "Workflow execution failed",
+        debug: `Workflow failed: ${result.data.error}. Elapsed time: ${result.data.elapsed_time}s`,
+      };
+    }
+
+    // データ抽出
+    const extractedData = extractDataFromResponse(result);
+
+    return {
+      success: true,
+      data: extractedData,
+      debug: `Workflow completed successfully.`,
+      rawResponse: result,
+    };
+  } catch (error) {
+    console.error("Workflow error:", error);
+    return {
+      success: false,
+      error: error.message,
+      debug: `Workflow exception: ${error.message}`,
+    };
   }
 }
 
-function calculateConfidence(outputs) {
-  let confidence = 0.5;
+// レスポンスからデータを抽出
+function extractDataFromResponse(result) {
+  console.log("=== DATA EXTRACTION ===");
+  console.log("Full result structure:", Object.keys(result));
 
+  let extractedData = {
+    issuing_organization: "",
+    document_type: "",
+    document_date: "",
+    document_name: "",
+    confidence: 0.5,
+  };
+
+  // パターン1: result.data.outputs内をチェック
   if (
-    outputs.issuing_organization &&
-    !outputs.issuing_organization.includes("不明")
+    result.data &&
+    result.data.outputs &&
+    typeof result.data.outputs === "object"
   ) {
-    confidence += 0.2;
+    console.log("Pattern 1: Checking result.data.outputs");
+    const outputs = result.data.outputs;
+
+    // 直接アクセス
+    if (outputs.issuing_organization)
+      extractedData.issuing_organization = outputs.issuing_organization;
+    if (outputs.document_type)
+      extractedData.document_type = outputs.document_type;
+    if (outputs.document_date)
+      extractedData.document_date = outputs.document_date;
+    if (outputs.document_name)
+      extractedData.document_name = outputs.document_name;
   }
 
-  if (outputs.document_type && !outputs.document_type.includes("その他")) {
-    confidence += 0.2;
-  }
-
-  if (outputs.document_date && outputs.document_date !== formatCurrentDate()) {
-    confidence += 0.1;
-  }
-
-  return Math.min(confidence, 1.0);
-}
-
-function inferOrganizationFromFilename(filename) {
-  const orgPatterns = {
-    支払基金: ["支払", "基金", "shikyu"],
-    国保連: ["国保", "kokaho", "連合"],
-    Amazon: ["amazon"],
-    楽天: ["rakuten"],
-    セブン: ["seven", "711"],
-    ローソン: ["lawson"],
-  };
-
-  const lowerFilename = filename.toLowerCase();
-
-  for (const [org, patterns] of Object.entries(orgPatterns)) {
+  // パターン2: result.data直下をチェック
+  if (result.data && typeof result.data === "object") {
+    console.log("Pattern 2: Checking result.data directly");
     if (
-      patterns.some((pattern) => lowerFilename.includes(pattern.toLowerCase()))
+      result.data.issuing_organization &&
+      !extractedData.issuing_organization
     ) {
-      return org;
+      extractedData.issuing_organization = result.data.issuing_organization;
+    }
+    if (result.data.document_type && !extractedData.document_type) {
+      extractedData.document_type = result.data.document_type;
+    }
+    if (result.data.document_date && !extractedData.document_date) {
+      extractedData.document_date = result.data.document_date;
+    }
+    if (result.data.document_name && !extractedData.document_name) {
+      extractedData.document_name = result.data.document_name;
     }
   }
 
-  return "不明機関";
-}
-
-function inferDocumentTypeFromFilename(filename) {
-  const typePatterns = {
-    増減点連絡書: ["増減", "zougen"],
-    返戻内訳書: ["返戻", "henrei"],
-    "過誤・再審査結果通知書": ["過誤", "kago"],
-    診療報酬明細書: ["明細", "meisai"],
-    領収書: ["receipt", "領収", "ryoshu"],
-    請求書: ["invoice", "請求", "seikyu"],
-    契約書: ["contract", "契約", "keiyaku"],
-  };
-
-  const lowerFilename = filename.toLowerCase();
-
-  for (const [type, patterns] of Object.entries(typePatterns)) {
-    if (
-      patterns.some((pattern) => lowerFilename.includes(pattern.toLowerCase()))
-    ) {
-      return type;
-    }
+  // デフォルト値の設定
+  if (!extractedData.issuing_organization)
+    extractedData.issuing_organization = "不明機関";
+  if (!extractedData.document_type) extractedData.document_type = "その他書類";
+  if (!extractedData.document_date)
+    extractedData.document_date = formatCurrentDate();
+  if (!extractedData.document_name) {
+    extractedData.document_name = `${extractedData.issuing_organization}_${extractedData.document_type}`;
   }
 
-  return "その他書類";
+  console.log("Final extracted data:", extractedData);
+  return extractedData;
 }
 
+// ファイル名生成
 function generateFilename(analysis, originalFilename) {
-  const date = analysis.document_date;
+  const date = analysis.document_date || formatCurrentDate();
   const documentName =
     analysis.document_name ||
     `${analysis.issuing_organization}_${analysis.document_type}`;
@@ -399,6 +523,7 @@ function generateFilename(analysis, originalFilename) {
   return `${date}_${cleanDocumentName}.${ext}`;
 }
 
+// 現在日付フォーマット
 function formatCurrentDate() {
   const now = new Date();
   const year = now.getFullYear();
