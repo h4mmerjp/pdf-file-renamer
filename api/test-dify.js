@@ -1,4 +1,4 @@
-// 修正版 Dify API接続テスト (DIFY_BASE_URL対応)
+// 正しい修正版 Dify API接続テスト (DIFY_BASE_URL完全対応)
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,42 +18,72 @@ export default async function handler(req, res) {
   const apiKey = process.env.DIFY_API_KEY;
   const baseUrl = process.env.DIFY_BASE_URL;
 
-  console.log("Environment check:");
+  console.log("Dify API Test - Environment check:");
   console.log("- DIFY_API_KEY exists:", !!apiKey);
   console.log("- DIFY_BASE_URL:", baseUrl);
 
+  // API Key チェック
   if (!apiKey) {
     res.status(500).json({
       success: false,
       error: "DIFY_API_KEY not configured",
       message: "Vercelの環境変数でDIFY_API_KEYを設定してください",
+      debug: {
+        DIFY_API_KEY: "missing",
+        DIFY_BASE_URL: baseUrl || "missing"
+      }
     });
     return;
   }
 
+  // Base URL チェック
   if (!baseUrl) {
     res.status(500).json({
       success: false,
       error: "DIFY_BASE_URL not configured", 
-      message: "Vercelの環境変数でDIFY_BASE_URLを設定してください",
+      message: "Vercelの環境変数でDIFY_BASE_URLを設定してください（例: https://api.dify.ai/v1）",
+      debug: {
+        DIFY_API_KEY: "set",
+        DIFY_BASE_URL: "missing"
+      }
     });
     return;
   }
 
   try {
     // Dify APIの基本接続テスト
-    console.log("Testing Dify connection to:", `${baseUrl}/info`);
+    const testUrl = `${baseUrl}/info`;
+    console.log("Testing Dify connection to:", testUrl);
     
-    const testResponse = await fetch(`${baseUrl}/info`, {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
+    
+    const testResponse = await fetch(testUrl, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      timeout: 10000,
+      signal: controller.signal
     });
 
+    clearTimeout(timeoutId);
+    
     console.log("Dify API response status:", testResponse.status);
+    console.log("Dify API response headers:", Object.fromEntries(testResponse.headers.entries()));
+    
+    let responseData = null;
+    let responseText = "";
+    
+    try {
+      responseText = await testResponse.text();
+      if (responseText) {
+        responseData = JSON.parse(responseText);
+      }
+    } catch (parseError) {
+      console.log("Response parsing info:", parseError.message);
+      console.log("Raw response:", responseText.substring(0, 200));
+    }
     
     const difyStatus = testResponse.ok ? "connected" : "failed";
 
@@ -61,21 +91,47 @@ export default async function handler(req, res) {
       success: true,
       dify_connection: difyStatus,
       dify_status_code: testResponse.status,
+      dify_status_text: testResponse.statusText,
       api_key_length: apiKey.length,
       base_url: baseUrl,
+      test_url: testUrl,
+      response_data: responseData,
       timestamp: new Date().toISOString(),
-      message:
-        difyStatus === "connected"
-          ? "Dify API接続成功"
-          : "Dify API接続に問題があります",
+      message: difyStatus === "connected"
+        ? "Dify API接続成功"
+        : `Dify API接続に問題があります (${testResponse.status}: ${testResponse.statusText})`,
+      debug: {
+        environment: "vercel",
+        node_version: process.version,
+        response_preview: responseText.substring(0, 100)
+      }
     });
+    
   } catch (error) {
     console.error("Dify connection error:", error);
+    
+    let errorMessage = "Dify API connection failed";
+    let errorDetails = error.message;
+    
+    if (error.name === 'AbortError') {
+      errorMessage = "Dify API connection timeout";
+      errorDetails = "接続がタイムアウトしました (10秒)";
+    } else if (error.code === 'ENOTFOUND') {
+      errorMessage = "Dify API endpoint not found";
+      errorDetails = "ネットワーク接続またはURL設定を確認してください";
+    }
+    
     res.status(500).json({
       success: false,
-      error: "Dify API connection failed",
-      details: error.message,
+      error: errorMessage,
+      details: errorDetails,
       timestamp: new Date().toISOString(),
+      debug: {
+        error_name: error.name,
+        error_code: error.code,
+        base_url: baseUrl,
+        api_key_configured: !!apiKey
+      }
     });
   }
 }
