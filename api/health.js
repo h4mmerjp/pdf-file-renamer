@@ -1,4 +1,4 @@
-// ヘルスチェックAPI
+// 修正版 ヘルスチェックAPI (DIFY_BASE_URL対応)
 export default function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -15,10 +15,10 @@ export default function handler(req, res) {
     return;
   }
 
-  // 環境変数チェック
+  // 環境変数チェック (DIFY_BASE_URL対応)
   const envCheck = {
     DIFY_API_KEY: process.env.DIFY_API_KEY ? "set" : "missing",
-    DIFY_API_URL: process.env.DIFY_API_URL ? "set" : "missing",
+    DIFY_BASE_URL: process.env.DIFY_BASE_URL ? "set" : "missing",
   };
 
   res.status(200).json({
@@ -33,6 +33,7 @@ export default function handler(req, res) {
       "/api/health",
       "/api/test-dify",
       "/api/process",
+      "/api/download"
     ],
   });
 }
