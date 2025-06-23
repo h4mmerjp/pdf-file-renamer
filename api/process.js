@@ -1,4 +1,4 @@
-// 完全修正版 PDF処理API (Dify連携強化)
+// タイムアウト対策版 PDF処理API
 import formidable from "formidable";
 import fs from "fs";
 import FormData from "form-data";
@@ -8,7 +8,7 @@ export const config = {
   api: {
     bodyParser: false,
   },
-  maxDuration: 300, // 5分（Vercel Pro以上）
+  maxDuration: 300, // 5分（Vercel Pro以上で有効）
 };
 
 export default async function handler(req, res) {
@@ -49,39 +49,62 @@ export default async function handler(req, res) {
     });
   }
 
+  // 早期レスポンス設定（50秒後に強制終了）
+  const timeoutId = setTimeout(() => {
+    console.log(`[${requestId}] Timeout reached, sending partial response`);
+    if (!res.headersSent) {
+      res.status(200).json({
+        success: false,
+        error: "Processing timeout",
+        message: "処理がタイムアウトしました。ファイルサイズを小さくするか、少ないファイル数で再試行してください。",
+        partial_results: [],
+        duration: Date.now() - startTime,
+        requestId,
+      });
+    }
+  }, 50000); // 50秒でタイムアウト
+
   try {
     const contentType = req.headers["content-type"] || "";
     console.log(`[${requestId}] Content-Type:`, contentType);
 
+    let result;
+
     // JSONリクエストの処理
     if (contentType.includes("application/json")) {
       console.log(`[${requestId}] Processing JSON request...`);
-      return await handleJsonRequest(req, res, requestId, startTime);
+      result = await handleJsonRequest(req, res, requestId, startTime);
     }
-
     // FormDataリクエストの処理
-    if (contentType.includes("multipart/form-data")) {
+    else if (contentType.includes("multipart/form-data")) {
       console.log(`[${requestId}] Processing FormData request...`);
-      return await handleFormDataRequest(req, res, requestId, startTime);
+      result = await handleFormDataRequest(req, res, requestId, startTime);
+    } else {
+      clearTimeout(timeoutId);
+      return res.status(400).json({
+        error: "Unsupported content type",
+        debug: `Content-Type: ${contentType}`,
+        requestId,
+      });
     }
 
-    return res.status(400).json({
-      error: "Unsupported content type",
-      debug: `Content-Type: ${contentType}`,
-      requestId,
-    });
+    clearTimeout(timeoutId);
+    return result;
 
   } catch (error) {
+    clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
     console.error(`[${requestId}] Handler error after ${duration}ms:`, error);
     
-    res.status(500).json({
-      error: "Internal server error",
-      debug: error.message,
-      duration,
-      requestId,
-      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Internal server error",
+        debug: error.message,
+        duration,
+        requestId,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      });
+    }
   }
 }
 
@@ -90,17 +113,19 @@ async function handleJsonRequest(req, res, requestId, startTime) {
   return new Promise((resolve) => {
     const chunks = [];
     let totalSize = 0;
-    const maxSize = 50 * 1024 * 1024; // 50MB制限
+    const maxSize = 10 * 1024 * 1024; // 10MB制限（タイムアウト対策）
 
     req.on("data", (chunk) => {
       totalSize += chunk.length;
       if (totalSize > maxSize) {
         console.error(`[${requestId}] Request too large: ${totalSize} bytes`);
-        res.status(413).json({
-          error: "Request too large",
-          debug: `Size: ${totalSize} bytes, Max: ${maxSize} bytes`,
-          requestId,
-        });
+        if (!res.headersSent) {
+          res.status(413).json({
+            error: "Request too large",
+            debug: `Size: ${totalSize} bytes, Max: ${maxSize} bytes`,
+            requestId,
+          });
+        }
         resolve();
         return;
       }
@@ -119,49 +144,65 @@ async function handleJsonRequest(req, res, requestId, startTime) {
           jsonData = JSON.parse(body);
         } catch (parseError) {
           console.error(`[${requestId}] JSON parse error:`, parseError.message);
-          res.status(400).json({
-            error: "Invalid JSON",
-            debug: `Parse error: ${parseError.message}`,
-            requestId,
-          });
+          if (!res.headersSent) {
+            res.status(400).json({
+              error: "Invalid JSON",
+              debug: `Parse error: ${parseError.message}`,
+              requestId,
+            });
+          }
           resolve();
           return;
         }
 
         if (!jsonData.files || !Array.isArray(jsonData.files) || jsonData.files.length === 0) {
-          res.status(400).json({
-            error: "No files in JSON request",
-            debug: "Expected 'files' array in JSON body",
-            requestId,
-          });
+          if (!res.headersSent) {
+            res.status(400).json({
+              error: "No files in JSON request",
+              debug: "Expected 'files' array in JSON body",
+              requestId,
+            });
+          }
           resolve();
           return;
         }
 
+        // ファイル数制限（タイムアウト対策）
+        const maxFiles = Math.min(jsonData.files.length, 3); // 最大3ファイルまで
+        const limitedFiles = jsonData.files.slice(0, maxFiles);
+
+        if (maxFiles < jsonData.files.length) {
+          console.log(`[${requestId}] File count limited: ${jsonData.files.length} -> ${maxFiles}`);
+        }
+
         // 複数ファイル処理
-        await processMultipleFiles(jsonData.files, res, requestId, startTime);
+        await processMultipleFiles(limitedFiles, res, requestId, startTime);
         resolve();
 
       } catch (error) {
         const duration = Date.now() - startTime;
         console.error(`[${requestId}] JSON processing error after ${duration}ms:`, error);
-        res.status(500).json({
-          error: "JSON processing failed",
-          debug: error.message,
-          duration,
-          requestId,
-        });
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: "JSON processing failed",
+            debug: error.message,
+            duration,
+            requestId,
+          });
+        }
         resolve();
       }
     });
 
     req.on("error", (error) => {
       console.error(`[${requestId}] Request error:`, error);
-      res.status(500).json({
-        error: "Request error",
-        debug: error.message,
-        requestId,
-      });
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: "Request error",
+          debug: error.message,
+          requestId,
+        });
+      }
       resolve();
     });
   });
@@ -171,7 +212,7 @@ async function handleJsonRequest(req, res, requestId, startTime) {
 async function handleFormDataRequest(req, res, requestId, startTime) {
   try {
     const form = formidable({
-      maxFileSize: 15 * 1024 * 1024, // 15MB制限
+      maxFileSize: 5 * 1024 * 1024, // 5MB制限（タイムアウト対策）
       keepExtensions: true,
       maxFiles: 1,
     });
@@ -200,13 +241,18 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
       return res.status(400).json({
         error: "Unsupported file type",
         debug: `Received: ${uploadedFile.mimetype}`,
-        supportedTypes: ["application/pdf", "image/jpeg", "image/png", "image/gif"],
+        supportedTypes: ["application/pdf", "image/jpeg", "image/png"],
         requestId,
       });
     }
 
-    // 単一ファイル処理
-    const result = await processSingleFile(uploadedFile, requestId);
+    // 単一ファイル処理（タイムアウト付き）
+    const result = await Promise.race([
+      processSingleFile(uploadedFile, requestId),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Single file processing timeout")), 30000)
+      )
+    ]);
     
     return res.status(200).json({
       success: true,
@@ -220,19 +266,22 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`[${requestId}] FormData processing error after ${duration}ms:`, error);
-    return res.status(500).json({
-      error: "FormData processing failed",
-      debug: error.message,
-      duration,
-      requestId,
-    });
+    
+    if (!res.headersSent) {
+      return res.status(500).json({
+        error: "FormData processing failed",
+        debug: error.message,
+        duration,
+        requestId,
+      });
+    }
   }
 }
 
-// 複数ファイル処理（順次処理）
+// 複数ファイル処理（順次処理・タイムアウト対策）
 async function processMultipleFiles(files, res, requestId, startTime) {
   const results = [];
-  const maxProcessingTime = 280000; // 280秒制限（5分-20秒のマージン）
+  const maxProcessingTime = 45000; // 45秒制限
 
   console.log(`[${requestId}] Processing ${files.length} files sequentially...`);
 
@@ -268,13 +317,19 @@ async function processMultipleFiles(files, res, requestId, startTime) {
       }
 
       const buffer = Buffer.from(base64Data, "base64");
+      
+      // ファイルサイズチェック（タイムアウト対策）
+      if (buffer.length > 3 * 1024 * 1024) { // 3MB制限
+        throw new Error(`File too large: ${buffer.length} bytes (max 3MB)`);
+      }
+
       console.log(`[${requestId}] File ${file.name}: ${buffer.length} bytes`);
 
-      // タイムアウト付きでDify処理を実行
+      // タイムアウト付きでDify処理を実行（20秒制限）
       const fileResult = await Promise.race([
         processSingleFileBuffer(buffer, file.name, requestId),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("File processing timeout")), 60000)
+          setTimeout(() => reject(new Error("File processing timeout (20s)")), 20000)
         )
       ]);
 
@@ -306,7 +361,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
 
     // 次のファイルまで少し待機
     if (i < files.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 
@@ -316,142 +371,25 @@ async function processMultipleFiles(files, res, requestId, startTime) {
 
   console.log(`[${requestId}] Processing complete after ${totalDuration}ms: ${successCount} success, ${errorCount} errors`);
 
-  res.status(200).json({
-    success: true,
-    message: `${files.length}個のファイルを処理しました（成功: ${successCount}、エラー: ${errorCount}）`,
-    timestamp: new Date().toISOString(),
-    results: results,
-    summary: {
-      total: results.length,
-      successful: successCount,
-      failed: errorCount,
-      success_rate: successCount > 0 ? Math.round((successCount / results.length) * 100) : 0,
-      total_duration: totalDuration,
-    },
-    requestId,
-  });
-}
-
-// 単一ファイル処理（ファイルオブジェクト版）
-async function processSingleFile(file, requestId) {
-  // 1. Difyにファイルアップロード
-  console.log(`[${requestId}] Step 1: Upload to Dify`);
-  const uploadResult = await uploadFileToDify(file, requestId);
-
-  if (!uploadResult.success) {
-    throw new Error(`Upload failed: ${uploadResult.error}`);
-  }
-
-  console.log(`[${requestId}] File uploaded with ID: ${uploadResult.fileId}`);
-
-  // 2. ワークフロー実行
-  console.log(`[${requestId}] Step 2: Run workflow`);
-  const workflowResult = await runDifyWorkflow(uploadResult.fileId, requestId);
-
-  if (!workflowResult.success) {
-    throw new Error(`Workflow failed: ${workflowResult.error}`);
-  }
-
-  // 3. ファイル名生成
-  const newFilename = generateFilename(workflowResult.data, file.originalFilename);
-
-  return {
-    original_filename: file.originalFilename,
-    new_filename: newFilename,
-    analysis: workflowResult.data,
-    downloadUrl: `/api/download/${encodeURIComponent(newFilename)}`,
-    status: "success",
-  };
-}
-
-// 単一ファイル処理（バッファ版）
-async function processSingleFileBuffer(buffer, filename, requestId) {
-  // 1. Difyにバッファアップロード
-  console.log(`[${requestId}] Step 1: Upload buffer to Dify`);
-  const uploadResult = await uploadBufferToDify(buffer, filename, requestId);
-
-  if (!uploadResult.success) {
-    throw new Error(`Upload failed: ${uploadResult.error}`);
-  }
-
-  console.log(`[${requestId}] Buffer uploaded with ID: ${uploadResult.fileId}`);
-
-  // 2. ワークフロー実行
-  console.log(`[${requestId}] Step 2: Run workflow`);
-  const workflowResult = await runDifyWorkflow(uploadResult.fileId, requestId);
-
-  if (!workflowResult.success) {
-    throw new Error(`Workflow failed: ${workflowResult.error}`);
-  }
-
-  // 3. ファイル名生成
-  const newFilename = generateFilename(workflowResult.data, filename);
-
-  return {
-    original_filename: filename,
-    new_filename: newFilename,
-    analysis: workflowResult.data,
-    status: "success",
-  };
-}
-
-// Difyにファイルをアップロード
-async function uploadFileToDify(file, requestId) {
-  try {
-    const formData = new FormData();
-    const fileStream = fs.createReadStream(file.filepath);
-
-    formData.append("file", fileStream, {
-      filename: file.originalFilename,
-      contentType: file.mimetype,
-    });
-    formData.append("user", "pdf-renamer-user");
-
-    console.log(`[${requestId}] Uploading to: ${process.env.DIFY_BASE_URL}/files/upload`);
-
-    const response = await fetch(`${process.env.DIFY_BASE_URL}/files/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
-        ...formData.getHeaders(),
-      },
-      body: formData,
-      timeout: 60000, // 60秒タイムアウト
-    });
-
-    const responseText = await response.text();
-    console.log(`[${requestId}] Upload response: ${response.status}`);
-
-    if (!response.ok) {
-      return {
-        success: false,
-        error: `HTTP ${response.status}: ${responseText}`,
-      };
-    }
-
-    const result = JSON.parse(responseText);
-    
-    if (!result.id) {
-      return {
-        success: false,
-        error: "No file ID returned from Dify",
-      };
-    }
-
-    return {
+  if (!res.headersSent) {
+    res.status(200).json({
       success: true,
-      fileId: result.id,
-    };
-  } catch (error) {
-    console.error(`[${requestId}] Upload error:`, error);
-    return {
-      success: false,
-      error: error.message,
-    };
+      message: `${files.length}個のファイルを処理しました（成功: ${successCount}、エラー: ${errorCount}）`,
+      timestamp: new Date().toISOString(),
+      results: results,
+      summary: {
+        total: results.length,
+        successful: successCount,
+        failed: errorCount,
+        success_rate: successCount > 0 ? Math.round((successCount / results.length) * 100) : 0,
+        total_duration: totalDuration,
+      },
+      requestId,
+    });
   }
 }
 
-// Difyにバッファをアップロード
+// Difyにバッファをアップロード（タイムアウト対策）
 async function uploadBufferToDify(buffer, filename, requestId) {
   try {
     const formData = new FormData();
@@ -464,15 +402,19 @@ async function uploadBufferToDify(buffer, filename, requestId) {
 
     console.log(`[${requestId}] Uploading buffer to: ${process.env.DIFY_BASE_URL}/files/upload`);
 
-    const response = await fetch(`${process.env.DIFY_BASE_URL}/files/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
-        ...formData.getHeaders(),
-      },
-      body: formData,
-      timeout: 60000,
-    });
+    const response = await Promise.race([
+      fetch(`${process.env.DIFY_BASE_URL}/files/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+          ...formData.getHeaders(),
+        },
+        body: formData,
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Upload timeout (15s)")), 15000)
+      )
+    ]);
 
     const responseText = await response.text();
     console.log(`[${requestId}] Buffer upload response: ${response.status}`);
@@ -506,7 +448,7 @@ async function uploadBufferToDify(buffer, filename, requestId) {
   }
 }
 
-// ワークフロー実行（ブログ参考の2段階目）
+// ワークフロー実行（タイムアウト対策）
 async function runDifyWorkflow(fileId, requestId) {
   try {
     const requestBody = {
@@ -514,7 +456,7 @@ async function runDifyWorkflow(fileId, requestId) {
         file: {
           type: "document",
           transfer_method: "local_file",
-          upload_file_id: fileId, // ← 1段階目で取得したファイルID
+          upload_file_id: fileId,
         },
       },
       response_mode: "blocking",
@@ -522,17 +464,20 @@ async function runDifyWorkflow(fileId, requestId) {
     };
 
     console.log(`[${requestId}] Running workflow: ${process.env.DIFY_BASE_URL}/workflows/run`);
-    console.log(`[${requestId}] Request body:`, JSON.stringify(requestBody, null, 2));
 
-    const response = await fetch(`${process.env.DIFY_BASE_URL}/workflows/run`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-      timeout: 120000, // 120秒タイムアウト
-    });
+    const response = await Promise.race([
+      fetch(`${process.env.DIFY_BASE_URL}/workflows/run`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.DIFY_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Workflow timeout (30s)")), 30000)
+      )
+    ]);
 
     const responseText = await response.text();
     console.log(`[${requestId}] Workflow response: ${response.status}`);
@@ -568,6 +513,43 @@ async function runDifyWorkflow(fileId, requestId) {
   }
 }
 
+// 単一ファイル処理（バッファ版）
+async function processSingleFileBuffer(buffer, filename, requestId) {
+  // 1. Difyにバッファアップロード
+  console.log(`[${requestId}] Step 1: Upload buffer to Dify`);
+  const uploadResult = await uploadBufferToDify(buffer, filename, requestId);
+
+  if (!uploadResult.success) {
+    throw new Error(`Upload failed: ${uploadResult.error}`);
+  }
+
+  console.log(`[${requestId}] Buffer uploaded with ID: ${uploadResult.fileId}`);
+
+  // 2. ワークフロー実行
+  console.log(`[${requestId}] Step 2: Run workflow`);
+  const workflowResult = await runDifyWorkflow(uploadResult.fileId, requestId);
+
+  if (!workflowResult.success) {
+    throw new Error(`Workflow failed: ${workflowResult.error}`);
+  }
+
+  // 3. ファイル名生成
+  const newFilename = generateFilename(workflowResult.data, filename);
+
+  return {
+    original_filename: filename,
+    new_filename: newFilename,
+    analysis: workflowResult.data,
+    status: "success",
+  };
+}
+
+// 単一ファイル処理（ファイルオブジェクト版）
+async function processSingleFile(file, requestId) {
+  const buffer = fs.readFileSync(file.filepath);
+  return await processSingleFileBuffer(buffer, file.originalFilename, requestId);
+}
+
 // レスポンスからデータを抽出
 function extractDataFromResponse(result, requestId) {
   console.log(`[${requestId}] Extracting data from response`);
@@ -584,7 +566,6 @@ function extractDataFromResponse(result, requestId) {
     const outputs = result.data.outputs;
     console.log(`[${requestId}] Available outputs:`, Object.keys(outputs));
 
-    // YMLファイルで定義されているパラメータを取得
     if (outputs.document_type) extractedData.document_type = outputs.document_type;
     if (outputs.document_date) extractedData.document_date = outputs.document_date;
     if (outputs.document_name) extractedData.document_name = outputs.document_name;
@@ -612,7 +593,7 @@ function generateFilename(analysis, originalFilename) {
   const cleanDocumentName = documentName
     .replace(/[\/\\:*?"<>|]/g, "_")
     .replace(/\s+/g, "_")
-    .substring(0, 100); // ファイル名長さ制限
+    .substring(0, 50); // ファイル名長さ制限
 
   return `${date}_${cleanDocumentName}.${ext}`;
 }
@@ -633,10 +614,7 @@ function isValidFileType(mimeType) {
     "application/pdf",
     "image/jpeg",
     "image/jpg", 
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "image/svg+xml"
+    "image/png"
   ];
   return supportedTypes.includes(mimeType);
 }
@@ -648,10 +626,7 @@ function getContentType(filename) {
     pdf: "application/pdf",
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
-    png: "image/png", 
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml"
+    png: "image/png"
   };
   return contentTypes[ext] || "application/octet-stream";
 }
