@@ -1,5 +1,5 @@
-// 基本動作確認用API
-export default function handler(req, res) {
+// CommonJS版 基本動作確認用API
+module.exports = function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -19,4 +19,4 @@ export default function handler(req, res) {
     method: req.method,
     url: req.url,
   });
-}
+};
