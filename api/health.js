@@ -1,5 +1,5 @@
-// 修正版 ヘルスチェックAPI (DIFY_BASE_URL対応)
-export default function handler(req, res) {
+// CommonJS版 ヘルスチェックAPI
+module.exports = function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -36,4 +36,4 @@ export default function handler(req, res) {
       "/api/download"
     ],
   });
-}
+};
