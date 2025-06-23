@@ -1,5 +1,7 @@
-// 正しい修正版 Dify API接続テスト (DIFY_BASE_URL完全対応)
-export default async function handler(req, res) {
+// CommonJS版 Dify API接続テスト
+const fetch = require('node-fetch');
+
+module.exports = async function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -55,22 +57,16 @@ export default async function handler(req, res) {
     const testUrl = `${baseUrl}/info`;
     console.log("Testing Dify connection to:", testUrl);
     
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
-    
     const testResponse = await fetch(testUrl, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      signal: controller.signal
+      timeout: 10000
     });
-
-    clearTimeout(timeoutId);
     
     console.log("Dify API response status:", testResponse.status);
-    console.log("Dify API response headers:", Object.fromEntries(testResponse.headers.entries()));
     
     let responseData = null;
     let responseText = "";
@@ -82,7 +78,6 @@ export default async function handler(req, res) {
       }
     } catch (parseError) {
       console.log("Response parsing info:", parseError.message);
-      console.log("Raw response:", responseText.substring(0, 200));
     }
     
     const difyStatus = testResponse.ok ? "connected" : "failed";
@@ -102,8 +97,7 @@ export default async function handler(req, res) {
         : `Dify API接続に問題があります (${testResponse.status}: ${testResponse.statusText})`,
       debug: {
         environment: "vercel",
-        node_version: process.version,
-        response_preview: responseText.substring(0, 100)
+        node_version: process.version
       }
     });
     
@@ -113,7 +107,7 @@ export default async function handler(req, res) {
     let errorMessage = "Dify API connection failed";
     let errorDetails = error.message;
     
-    if (error.name === 'AbortError') {
+    if (error.type === 'request-timeout') {
       errorMessage = "Dify API connection timeout";
       errorDetails = "接続がタイムアウトしました (10秒)";
     } else if (error.code === 'ENOTFOUND') {
@@ -134,4 +128,4 @@ export default async function handler(req, res) {
       }
     });
   }
-}
+};
