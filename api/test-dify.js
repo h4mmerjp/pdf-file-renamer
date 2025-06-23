@@ -1,4 +1,4 @@
-// Dify API接続テスト
+// 修正版 Dify API接続テスト (DIFY_BASE_URL対応)
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -16,7 +16,11 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.DIFY_API_KEY;
-  const apiUrl = process.env.DIFY_API_URL;
+  const baseUrl = process.env.DIFY_BASE_URL;
+
+  console.log("Environment check:");
+  console.log("- DIFY_API_KEY exists:", !!apiKey);
+  console.log("- DIFY_BASE_URL:", baseUrl);
 
   if (!apiKey) {
     res.status(500).json({
@@ -27,18 +31,20 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!apiUrl) {
+  if (!baseUrl) {
     res.status(500).json({
       success: false,
-      error: "DIFY_API_URL not configured",
-      message: "Vercelの環境変数でDIFY_API_URLを設定してください",
+      error: "DIFY_BASE_URL not configured", 
+      message: "Vercelの環境変数でDIFY_BASE_URLを設定してください",
     });
     return;
   }
 
   try {
     // Dify APIの基本接続テスト
-    const testResponse = await fetch("https://api.dify.ai/v1", {
+    console.log("Testing Dify connection to:", `${baseUrl}/info`);
+    
+    const testResponse = await fetch(`${baseUrl}/info`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -47,6 +53,8 @@ export default async function handler(req, res) {
       timeout: 10000,
     });
 
+    console.log("Dify API response status:", testResponse.status);
+    
     const difyStatus = testResponse.ok ? "connected" : "failed";
 
     res.status(200).json({
@@ -54,7 +62,7 @@ export default async function handler(req, res) {
       dify_connection: difyStatus,
       dify_status_code: testResponse.status,
       api_key_length: apiKey.length,
-      api_url: apiUrl,
+      base_url: baseUrl,
       timestamp: new Date().toISOString(),
       message:
         difyStatus === "connected"
@@ -62,6 +70,7 @@ export default async function handler(req, res) {
           : "Dify API接続に問題があります",
     });
   } catch (error) {
+    console.error("Dify connection error:", error);
     res.status(500).json({
       success: false,
       error: "Dify API connection failed",
