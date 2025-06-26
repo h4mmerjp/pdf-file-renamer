@@ -462,7 +462,7 @@
     </div>
 
     <script>
-     // 完全版改良フロントエンドJavaScript - index.htmlの<script>タグ内にコピー用
+     // 修正版フロントエンドJavaScript - AbortController問題解決
 // グローバル変数
 let selectedFiles = [];
 let processedFiles = [];
@@ -704,7 +704,7 @@ function abortProcessing() {
   }
 }
 
-// バッチ処理関数
+// バッチ処理関数（修正版 - AbortController問題解決）
 async function processBatch(files, batchNumber, totalBatches) {
   debugLog(`Batch ${batchNumber}/${totalBatches} processing start`, {
     fileCount: files.length,
@@ -719,6 +719,11 @@ async function processBatch(files, batchNumber, totalBatches) {
     data: fileData.data,
   }));
 
+  // 修正: AbortControllerのチェックを追加
+  if (processingAbortController && processingAbortController.signal.aborted) {
+    throw new Error("Processing aborted by user");
+  }
+
   const response = await fetch("/api/process", {
     method: "POST",
     headers: {
@@ -730,7 +735,7 @@ async function processBatch(files, batchNumber, totalBatches) {
       batch: batchNumber,
       totalBatches: totalBatches,
     }),
-    signal: processingAbortController.signal, // 中断シグナルを追加
+    signal: processingAbortController ? processingAbortController.signal : undefined, // 修正: 条件付きで設定
   });
 
   debugLog(`Batch ${batchNumber} API Response: ${response.status}`);
@@ -750,7 +755,7 @@ async function processBatch(files, batchNumber, totalBatches) {
   return data.results;
 }
 
-// ファイル処理（改良版 - より安定したエラー処理）
+// ファイル処理（修正版 - AbortController初期化タイミング修正）
 async function processFiles() {
   if (selectedFiles.length === 0) {
     showMessage("ファイルが選択されていません。", "warning");
@@ -769,7 +774,7 @@ async function processFiles() {
   processingStartTime = Date.now();
   debugLog("ファイル処理開始", { fileCount: selectedFiles.length });
 
-  // 処理用のAbortControllerを作成
+  // 修正: AbortControllerを処理開始時に初期化
   processingAbortController = new AbortController();
 
   const processBtn = document.getElementById("processBtn");
@@ -804,8 +809,9 @@ async function processFiles() {
         fileNames: batch.map(f => f.name)
       });
 
-      // 中断チェック
+      // 修正: 中断チェックを明確に
       if (processingAbortController.signal.aborted) {
+        debugLog("Processing aborted by user signal");
         throw new Error("Processing aborted by user");
       }
 
@@ -817,18 +823,12 @@ async function processFiles() {
       updateFileList();
 
       try {
-        // タイムアウト付きでバッチ処理
+        // 修正: シンプルなタイムアウト処理（AbortController監視Promiseを削除）
         const batchResult = await Promise.race([
           processBatch(batch, batchIndex + 1, totalBatches),
           new Promise((_, reject) => 
             setTimeout(() => reject(new Error("Batch processing timeout")), 45000)
-          ),
-          // 中断シグナルの監視
-          new Promise((_, reject) => {
-            processingAbortController.signal.addEventListener('abort', () => {
-              reject(new Error("Processing aborted"));
-            });
-          })
+          )
         ]);
 
         // 成功した結果を反映
@@ -915,7 +915,7 @@ async function processFiles() {
   } finally {
     // UI状態をリセット
     isProcessing = false;
-    processingAbortController = null;
+    processingAbortController = null; // 修正: nullにリセット
     
     if (processBtn) {
       processBtn.innerHTML = "ファイルを処理する";
