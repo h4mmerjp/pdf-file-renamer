@@ -704,7 +704,7 @@ function abortProcessing() {
   }
 }
 
-// バッチ処理関数（修正版 - AbortController問題解決）
+// バッチ処理関数（AbortController完全削除版）
 async function processBatch(files, batchNumber, totalBatches) {
   debugLog(`Batch ${batchNumber}/${totalBatches} processing start`, {
     fileCount: files.length,
@@ -719,10 +719,7 @@ async function processBatch(files, batchNumber, totalBatches) {
     data: fileData.data,
   }));
 
-  // 修正: AbortControllerのチェックを追加
-  if (processingAbortController && processingAbortController.signal.aborted) {
-    throw new Error("Processing aborted by user");
-  }
+  debugLog("Fetch実行開始 (AbortController無し)");
 
   const response = await fetch("/api/process", {
     method: "POST",
@@ -735,7 +732,7 @@ async function processBatch(files, batchNumber, totalBatches) {
       batch: batchNumber,
       totalBatches: totalBatches,
     }),
-    signal: processingAbortController ? processingAbortController.signal : undefined, // 修正: 条件付きで設定
+    // signal を完全に削除
   });
 
   debugLog(`Batch ${batchNumber} API Response: ${response.status}`);
