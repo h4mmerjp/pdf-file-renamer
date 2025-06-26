@@ -462,14 +462,13 @@
     </div>
 
     <script>
-     // 修正版フロントエンドJavaScript - AbortController問題解決
+    // 完全版 JavaScript - 1ファイルずつ順次処理
 // グローバル変数
 let selectedFiles = [];
 let processedFiles = [];
 let isProcessing = false;
 let debugMode = false;
 let processingStartTime = 0;
-let processingAbortController = null;
 
 // デバッグログ関数
 function debugLog(message, data = null) {
@@ -695,64 +694,95 @@ function clearAllFiles() {
   showMessage("全ファイルをクリアしました。", "info");
 }
 
-// 処理中断機能
-function abortProcessing() {
-  if (processingAbortController) {
-    processingAbortController.abort();
-    debugLog("Processing aborted by user");
-    showMessage("処理を中断しました。", "warning");
-  }
-}
+// 単一ファイル処理関数
+async function processSingleFile(fileData, fileIndex, totalFiles) {
+  debugLog(`Processing file ${fileIndex + 1}/${totalFiles}: ${fileData.name}`);
 
-// バッチ処理関数（AbortController完全削除版）
-async function processBatch(files, batchNumber, totalBatches) {
-  debugLog(`Batch ${batchNumber}/${totalBatches} processing start`, {
-    fileCount: files.length,
-    files: files.map(f => ({ name: f.name, size: f.size }))
-  });
+  try {
+    // ファイルを処理中状態に
+    fileData.status = "processing";
+    fileData.progress = 10;
+    updateFileList();
 
-  // API呼び出し用のデータを準備
-  const filesData = files.map((fileData) => ({
-    name: fileData.name,
-    size: fileData.size,
-    type: fileData.type,
-    data: fileData.data,
-  }));
-
-  debugLog("Fetch実行開始 (AbortController無し)");
-
-  const response = await fetch("/api/process", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      files: filesData,
+    // APIに送信するデータを準備
+    const requestData = {
+      files: [{
+        name: fileData.name,
+        size: fileData.size,
+        type: fileData.type,
+        data: fileData.data,
+      }],
       timestamp: new Date().toISOString(),
-      batch: batchNumber,
-      totalBatches: totalBatches,
-    }),
-    // signal を完全に削除
-  });
+      fileIndex: fileIndex + 1,
+      totalFiles: totalFiles,
+    };
 
-  debugLog(`Batch ${batchNumber} API Response: ${response.status}`);
+    debugLog(`Sending single file to API: ${fileData.name}`);
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`API Error (${response.status}): ${errorData.message || errorData.error}`);
+    // API呼び出し（タイムアウト付き）
+    const response = await Promise.race([
+      fetch("/api/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestData),
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("File processing timeout (30s)")), 30000)
+      )
+    ]);
+
+    debugLog(`File ${fileData.name} API Response: ${response.status}`);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`API Error (${response.status}): ${errorData.message || errorData.error}`);
+    }
+
+    const data = await response.json();
+    debugLog(`File ${fileData.name} Success:`, data);
+
+    if (!data.results || data.results.length === 0) {
+      throw new Error("Invalid API response: missing results");
+    }
+
+    const result = data.results[0]; // 1ファイルなので最初の結果を取得
+
+    // 成功した結果を反映
+    fileData.status = result.status;
+    fileData.newFilename = result.new_filename;
+    fileData.analysis = result.analysis;
+    fileData.error = result.error;
+    fileData.progress = result.status === "success" ? 100 : 0;
+    
+    if (result.status === "success" && result.fileData) {
+      fileData.processedFileData = result.fileData;
+      processedFiles.push(fileData);
+    }
+
+    updateFileList();
+    updateStats();
+
+    debugLog(`File ${fileData.name} processed successfully`);
+    return { success: true, result: result };
+
+  } catch (error) {
+    debugLog(`Error processing ${fileData.name}:`, error);
+    
+    // エラー状態に設定
+    fileData.status = "error";
+    fileData.error = error.message || "Unknown error";
+    fileData.progress = 0;
+    
+    updateFileList();
+    updateStats();
+
+    return { success: false, error: error.message };
   }
-
-  const data = await response.json();
-  debugLog(`Batch ${batchNumber} Success:`, data);
-
-  if (!data.results) {
-    throw new Error("Invalid API response: missing results");
-  }
-
-  return data.results;
 }
 
-// ファイル処理（修正版 - AbortController初期化タイミング修正）
+// ファイル処理（1ファイルずつ順次処理版）
 async function processFiles() {
   if (selectedFiles.length === 0) {
     showMessage("ファイルが選択されていません。", "warning");
@@ -760,166 +790,144 @@ async function processFiles() {
   }
 
   if (isProcessing) {
-    // 処理中の場合は中断オプションを提供
-    if (confirm("現在処理中です。処理を中断しますか？")) {
-      abortProcessing();
-    }
+    showMessage("現在処理中です。しばらくお待ちください。", "warning");
     return;
   }
 
   isProcessing = true;
   processingStartTime = Date.now();
-  debugLog("ファイル処理開始", { fileCount: selectedFiles.length });
-
-  // 修正: AbortControllerを処理開始時に初期化
-  processingAbortController = new AbortController();
+  debugLog("ファイル処理開始 (1ファイルずつ順次処理)", { fileCount: selectedFiles.length });
 
   const processBtn = document.getElementById("processBtn");
   if (processBtn) {
-    processBtn.innerHTML = '<div class="spinner"></div>処理中... <small>(クリックで中断)</small>';
-    processBtn.disabled = false; // 中断できるように有効に
-    processBtn.onclick = abortProcessing;
+    processBtn.innerHTML = '<div class="spinner"></div>処理中...';
+    processBtn.disabled = true;
   }
 
-  // プログレス表示の改善
-  let processedCount = 0;
+  // 処理統計
+  let successCount = 0;
+  let errorCount = 0;
 
   try {
-    // ファイル状態を処理中に更新
-    selectedFiles.forEach((file, index) => {
-      file.status = index === 0 ? "processing" : "pending";
+    // 全ファイルを待機状態に
+    selectedFiles.forEach(file => {
+      file.status = "pending";
       file.progress = 0;
     });
     updateFileList();
 
-    // より小さい単位でファイルを処理（2ファイルずつ）
-    const batchSize = 2;
-    const totalBatches = Math.ceil(selectedFiles.length / batchSize);
+    // 1ファイルずつ順次処理
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const fileStartTime = Date.now();
 
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      const startIndex = batchIndex * batchSize;
-      const endIndex = Math.min(startIndex + batchSize, selectedFiles.length);
-      const batch = selectedFiles.slice(startIndex, endIndex);
+      debugLog(`\n=== Processing File ${i + 1}/${selectedFiles.length} ===`);
+      debugLog(`File: ${file.name} (${formatFileSize(file.size)})`);
 
-      debugLog(`Processing batch ${batchIndex + 1}/${totalBatches}`, { 
-        batchSize: batch.length,
-        fileNames: batch.map(f => f.name)
-      });
-
-      // 修正: 中断チェックを明確に
-      if (processingAbortController.signal.aborted) {
-        debugLog("Processing aborted by user signal");
-        throw new Error("Processing aborted by user");
-      }
-
-      // バッチ内のファイルを処理中状態に
-      batch.forEach(file => {
-        file.status = "processing";
-        file.progress = 10;
+      // 現在のファイルを処理中に、残りを待機中に表示
+      selectedFiles.forEach((f, index) => {
+        if (index < i) {
+          // 既に処理済み（statusは既に設定済み）
+        } else if (index === i) {
+          f.status = "processing";
+          f.progress = 5;
+        } else {
+          f.status = "pending";
+          f.progress = 0;
+        }
       });
       updateFileList();
 
       try {
-        // 修正: シンプルなタイムアウト処理（AbortController監視Promiseを削除）
-        const batchResult = await Promise.race([
-          processBatch(batch, batchIndex + 1, totalBatches),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error("Batch processing timeout")), 45000)
-          )
-        ]);
+        // 単一ファイル処理
+        const processingResult = await processSingleFile(file, i, selectedFiles.length);
+        
+        if (processingResult.success) {
+          successCount++;
+          debugLog(`✅ File ${i + 1} completed successfully: ${file.newFilename}`);
+        } else {
+          errorCount++;
+          debugLog(`❌ File ${i + 1} failed: ${processingResult.error}`);
+        }
 
-        // 成功した結果を反映
-        batchResult.forEach((result, index) => {
-          const fileIndex = startIndex + index;
-          if (selectedFiles[fileIndex]) {
-            selectedFiles[fileIndex].status = result.status;
-            selectedFiles[fileIndex].newFilename = result.new_filename;
-            selectedFiles[fileIndex].analysis = result.analysis;
-            selectedFiles[fileIndex].error = result.error;
-            selectedFiles[fileIndex].progress = result.status === "success" ? 100 : 0;
-            
-            if (result.status === "success" && result.fileData) {
-              selectedFiles[fileIndex].processedFileData = result.fileData;
-              processedFiles.push(selectedFiles[fileIndex]);
-            }
-          }
-        });
-
-        processedCount += batch.length;
-        updateFileList();
-        updateStats();
-
-        // バッチ間で少し待機（サーバー負荷軽減）
-        if (batchIndex < totalBatches - 1) {
+        // ファイル間で少し待機（サーバー負荷軽減）
+        if (i < selectedFiles.length - 1) {
+          debugLog("Waiting 1 second before next file...");
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
-      } catch (batchError) {
-        debugLog(`Batch ${batchIndex + 1} error:`, batchError);
+      } catch (fileError) {
+        errorCount++;
+        debugLog(`❌ File ${i + 1} exception:`, fileError);
         
-        // バッチエラー時はそのバッチのファイルをエラー状態に
-        batch.forEach(file => {
-          file.status = "error";
-          file.error = batchError.message;
-          file.progress = 0;
-        });
+        // ファイルをエラー状態に設定
+        file.status = "error";
+        file.error = fileError.message || "Processing failed";
+        file.progress = 0;
         updateFileList();
+        updateStats();
 
-        // 中断でない場合は続行するか確認
-        if (!batchError.message.includes("aborted")) {
-          const shouldContinue = confirm(
-            `バッチ ${batchIndex + 1} の処理でエラーが発生しました。\n` +
-            `エラー: ${batchError.message}\n\n` +
-            `残りのファイルの処理を続行しますか？`
-          );
-          
-          if (!shouldContinue) {
-            break;
-          }
-        } else {
-          break; // 中断の場合は処理停止
+        // エラーが発生した場合、続行するか確認
+        const shouldContinue = confirm(
+          `ファイル "${file.name}" の処理でエラーが発生しました。\n` +
+          `エラー: ${fileError.message}\n\n` +
+          `残りのファイル（${selectedFiles.length - i - 1}個）の処理を続行しますか？`
+        );
+        
+        if (!shouldContinue) {
+          debugLog("User chose to stop processing");
+          break;
         }
       }
+
+      const fileProcessingTime = Date.now() - fileStartTime;
+      debugLog(`File ${i + 1} processing time: ${fileProcessingTime}ms`);
     }
 
-    const successCount = selectedFiles.filter(f => f.status === "success").length;
-    const errorCount = selectedFiles.filter(f => f.status === "error").length;
-    
-    showMessage(
-      `処理完了: 成功 ${successCount}件、エラー ${errorCount}件`,
-      successCount > 0 ? "success" : "warning"
-    );
+    const totalDuration = Date.now() - processingStartTime;
+    debugLog(`\n=== Processing Complete ===`);
+    debugLog(`Total time: ${totalDuration}ms`);
+    debugLog(`Success: ${successCount}, Errors: ${errorCount}`);
+
+    // 最終結果表示
+    if (successCount > 0) {
+      showMessage(
+        `処理完了: 成功 ${successCount}件、エラー ${errorCount}件`,
+        errorCount === 0 ? "success" : "warning"
+      );
+    } else {
+      showMessage(
+        `全ファイルの処理に失敗しました。エラー: ${errorCount}件`,
+        "error"
+      );
+    }
 
   } catch (error) {
-    debugLog("Processing error:", error);
+    debugLog("Overall processing error:", error);
+    showMessage(`処理中にエラーが発生しました: ${error.message}`, "error");
     
-    // 全体エラー時の処理
+    // 処理中のファイルをエラー状態に
     selectedFiles.forEach(file => {
       if (file.status === "processing") {
         file.status = "error";
-        file.error = error.message;
+        file.error = "Processing interrupted";
         file.progress = 0;
       }
     });
-    
     updateFileList();
     
-    if (error.message.includes("aborted")) {
-      showMessage("処理が中断されました。", "warning");
-    } else {
-      showMessage(`処理中にエラーが発生しました: ${error.message}`, "error");
-    }
   } finally {
     // UI状態をリセット
     isProcessing = false;
-    processingAbortController = null; // 修正: nullにリセット
     
     if (processBtn) {
       processBtn.innerHTML = "ファイルを処理する";
       processBtn.disabled = selectedFiles.length === 0;
-      processBtn.onclick = processFiles; // 元のハンドラーに戻す
+      processBtn.onclick = processFiles;
     }
+    
     updateStats();
+    debugLog("Processing session ended");
   }
 }
 
@@ -938,11 +946,10 @@ function updateFileList() {
     return;
   }
 
-  // 処理中の場合は中断ボタンとして表示
+  // 処理中の場合は無効化
   if (isProcessing) {
-    processBtn.innerHTML = '<div class="spinner"></div>処理中... <small>(クリックで中断)</small>';
-    processBtn.disabled = false;
-    processBtn.onclick = abortProcessing;
+    processBtn.innerHTML = '<div class="spinner"></div>処理中...';
+    processBtn.disabled = true;
   } else {
     processBtn.innerHTML = "ファイルを処理する";
     processBtn.disabled = false;
