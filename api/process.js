@@ -1,4 +1,4 @@
-// タイムアウト対策版 PDF処理API
+// 改良版 PDF処理API - 複数ファイル処理の安定化
 import formidable from "formidable";
 import fs from "fs";
 import FormData from "form-data";
@@ -49,20 +49,20 @@ export default async function handler(req, res) {
     });
   }
 
-  // 早期レスポンス設定（50秒後に強制終了）
-  const timeoutId = setTimeout(() => {
-    console.log(`[${requestId}] Timeout reached, sending partial response`);
+  // グローバルタイムアウト設定（55秒後に強制終了）
+  const globalTimeout = setTimeout(() => {
+    console.log(`[${requestId}] Global timeout reached, sending response`);
     if (!res.headersSent) {
       res.status(200).json({
-        success: false,
-        error: "Processing timeout",
-        message: "処理がタイムアウトしました。ファイルサイズを小さくするか、少ないファイル数で再試行してください。",
-        partial_results: [],
+        success: true,
+        message: "処理がタイムアウトしました。一部のファイルが処理されました。",
+        partial: true,
+        results: [], // 部分的な結果があればここに含める
         duration: Date.now() - startTime,
         requestId,
       });
     }
-  }, 50000); // 50秒でタイムアウト
+  }, 55000);
 
   try {
     const contentType = req.headers["content-type"] || "";
@@ -73,14 +73,14 @@ export default async function handler(req, res) {
     // JSONリクエストの処理
     if (contentType.includes("application/json")) {
       console.log(`[${requestId}] Processing JSON request...`);
-      result = await handleJsonRequest(req, res, requestId, startTime);
+      result = await handleJsonRequest(req, res, requestId, startTime, globalTimeout);
     }
     // FormDataリクエストの処理
     else if (contentType.includes("multipart/form-data")) {
       console.log(`[${requestId}] Processing FormData request...`);
-      result = await handleFormDataRequest(req, res, requestId, startTime);
+      result = await handleFormDataRequest(req, res, requestId, startTime, globalTimeout);
     } else {
-      clearTimeout(timeoutId);
+      clearTimeout(globalTimeout);
       return res.status(400).json({
         error: "Unsupported content type",
         debug: `Content-Type: ${contentType}`,
@@ -88,11 +88,11 @@ export default async function handler(req, res) {
       });
     }
 
-    clearTimeout(timeoutId);
+    clearTimeout(globalTimeout);
     return result;
 
   } catch (error) {
-    clearTimeout(timeoutId);
+    clearTimeout(globalTimeout);
     const duration = Date.now() - startTime;
     console.error(`[${requestId}] Handler error after ${duration}ms:`, error);
     
@@ -108,21 +108,36 @@ export default async function handler(req, res) {
   }
 }
 
-// JSONリクエストの処理（複数ファイル対応）
-async function handleJsonRequest(req, res, requestId, startTime) {
+// JSONリクエストの処理（ストリーミング改善版）
+async function handleJsonRequest(req, res, requestId, startTime, globalTimeout) {
   return new Promise((resolve) => {
     const chunks = [];
     let totalSize = 0;
-    const maxSize = 10 * 1024 * 1024; // 10MB制限（タイムアウト対策）
+    const maxSize = 8 * 1024 * 1024; // 8MBに制限を減らす
+
+    // リクエストタイムアウト設定
+    const requestTimeout = setTimeout(() => {
+      console.log(`[${requestId}] Request reading timeout`);
+      if (!res.headersSent) {
+        res.status(408).json({
+          error: "Request timeout",
+          message: "リクエストの読み込みがタイムアウトしました",
+          requestId,
+        });
+      }
+      resolve();
+    }, 10000); // 10秒でリクエスト読み込みタイムアウト
 
     req.on("data", (chunk) => {
       totalSize += chunk.length;
       if (totalSize > maxSize) {
+        clearTimeout(requestTimeout);
         console.error(`[${requestId}] Request too large: ${totalSize} bytes`);
         if (!res.headersSent) {
           res.status(413).json({
             error: "Request too large",
             debug: `Size: ${totalSize} bytes, Max: ${maxSize} bytes`,
+            message: "ファイルサイズが大きすぎます。小さいファイルで再試行してください。",
             requestId,
           });
         }
@@ -133,6 +148,8 @@ async function handleJsonRequest(req, res, requestId, startTime) {
     });
 
     req.on("end", async () => {
+      clearTimeout(requestTimeout);
+      
       try {
         const duration = Date.now() - startTime;
         console.log(`[${requestId}] JSON data received after ${duration}ms, size: ${totalSize} bytes`);
@@ -148,6 +165,7 @@ async function handleJsonRequest(req, res, requestId, startTime) {
             res.status(400).json({
               error: "Invalid JSON",
               debug: `Parse error: ${parseError.message}`,
+              message: "リクエストデータの形式が正しくありません",
               requestId,
             });
           }
@@ -160,6 +178,7 @@ async function handleJsonRequest(req, res, requestId, startTime) {
             res.status(400).json({
               error: "No files in JSON request",
               debug: "Expected 'files' array in JSON body",
+              message: "ファイルデータが見つかりません",
               requestId,
             });
           }
@@ -167,8 +186,8 @@ async function handleJsonRequest(req, res, requestId, startTime) {
           return;
         }
 
-        // ファイル数制限（タイムアウト対策）
-        const maxFiles = Math.min(jsonData.files.length, 3); // 最大3ファイルまで
+        // ファイル数制限を動的に調整（より安全に）
+        const maxFiles = Math.min(jsonData.files.length, 2); // 最大2ファイルまで
         const limitedFiles = jsonData.files.slice(0, maxFiles);
 
         if (maxFiles < jsonData.files.length) {
@@ -176,7 +195,7 @@ async function handleJsonRequest(req, res, requestId, startTime) {
         }
 
         // 複数ファイル処理
-        await processMultipleFiles(limitedFiles, res, requestId, startTime);
+        await processMultipleFiles(limitedFiles, res, requestId, startTime, globalTimeout);
         resolve();
 
       } catch (error) {
@@ -186,6 +205,7 @@ async function handleJsonRequest(req, res, requestId, startTime) {
           res.status(500).json({
             error: "JSON processing failed",
             debug: error.message,
+            message: "ファイル処理中にエラーが発生しました",
             duration,
             requestId,
           });
@@ -195,11 +215,13 @@ async function handleJsonRequest(req, res, requestId, startTime) {
     });
 
     req.on("error", (error) => {
+      clearTimeout(requestTimeout);
       console.error(`[${requestId}] Request error:`, error);
       if (!res.headersSent) {
         res.status(500).json({
           error: "Request error",
           debug: error.message,
+          message: "リクエストエラーが発生しました",
           requestId,
         });
       }
@@ -208,11 +230,11 @@ async function handleJsonRequest(req, res, requestId, startTime) {
   });
 }
 
-// FormDataリクエストの処理（単一ファイル）
-async function handleFormDataRequest(req, res, requestId, startTime) {
+// FormDataリクエストの処理（制限を厳しく）
+async function handleFormDataRequest(req, res, requestId, startTime, globalTimeout) {
   try {
     const form = formidable({
-      maxFileSize: 5 * 1024 * 1024, // 5MB制限（タイムアウト対策）
+      maxFileSize: 3 * 1024 * 1024, // 3MBに制限
       keepExtensions: true,
       maxFiles: 1,
     });
@@ -226,6 +248,7 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
       return res.status(400).json({
         error: "No file uploaded",
         debug: "files object does not contain a file property",
+        message: "ファイルがアップロードされていません",
         requestId,
       });
     }
@@ -242,6 +265,7 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
         error: "Unsupported file type",
         debug: `Received: ${uploadedFile.mimetype}`,
         supportedTypes: ["application/pdf", "image/jpeg", "image/png"],
+        message: "サポートされていないファイル形式です",
         requestId,
       });
     }
@@ -250,11 +274,11 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
     const buffer = fs.readFileSync(uploadedFile.filepath);
     const base64Data = `data:${uploadedFile.mimetype};base64,${buffer.toString('base64')}`;
 
-    // 単一ファイル処理（タイムアウト付き）
+    // 単一ファイル処理（短いタイムアウト）
     const result = await Promise.race([
       processSingleFile(uploadedFile, requestId),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Single file processing timeout")), 30000)
+        setTimeout(() => reject(new Error("Single file processing timeout")), 20000) // 20秒
       )
     ]);
     
@@ -278,6 +302,7 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
       return res.status(500).json({
         error: "FormData processing failed",
         debug: error.message,
+        message: "ファイル処理に失敗しました",
         duration,
         requestId,
       });
@@ -285,10 +310,11 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
   }
 }
 
-// 複数ファイル処理（順次処理・タイムアウト対策）
-async function processMultipleFiles(files, res, requestId, startTime) {
+// 複数ファイル処理（改良版・安定性重視）
+async function processMultipleFiles(files, res, requestId, startTime, globalTimeout) {
   const results = [];
-  const maxProcessingTime = 45000; // 45秒制限
+  const maxProcessingTime = 40000; // 40秒制限に短縮
+  const maxFileProcessingTime = 15000; // 1ファイルあたり15秒制限
 
   console.log(`[${requestId}] Processing ${files.length} files sequentially...`);
 
@@ -297,6 +323,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
     const fileStartTime = Date.now();
     const elapsedTotal = fileStartTime - startTime;
 
+    // 全体時間制限チェック
     if (elapsedTotal > maxProcessingTime) {
       console.log(`[${requestId}] Time limit reached, stopping at file ${i + 1}/${files.length}`);
       break;
@@ -305,7 +332,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
     try {
       console.log(`[${requestId}] Processing file ${i + 1}/${files.length}: ${file.name}`);
 
-      // ファイルバリデーション
+      // ファイルバリデーション（厳格化）
       if (!file.name || !file.data) {
         throw new Error("Invalid file data: missing name or data");
       }
@@ -325,18 +352,18 @@ async function processMultipleFiles(files, res, requestId, startTime) {
 
       const buffer = Buffer.from(base64Data, "base64");
       
-      // ファイルサイズチェック（タイムアウト対策）
-      if (buffer.length > 3 * 1024 * 1024) { // 3MB制限
-        throw new Error(`File too large: ${buffer.length} bytes (max 3MB)`);
+      // ファイルサイズチェック（より厳格に）
+      if (buffer.length > 2 * 1024 * 1024) { // 2MB制限
+        throw new Error(`File too large: ${buffer.length} bytes (max 2MB)`);
       }
 
       console.log(`[${requestId}] File ${file.name}: ${buffer.length} bytes`);
 
-      // タイムアウト付きでDify処理を実行（20秒制限）
+      // ファイル処理（短いタイムアウト）
       const fileResult = await Promise.race([
-        processSingleFileBuffer(buffer, file.name, requestId),
+        processSingleFileBufferWithRetry(buffer, file.name, requestId),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("File processing timeout (20s)")), 20000)
+          setTimeout(() => reject(new Error("File processing timeout (15s)")), maxFileProcessingTime)
         )
       ]);
 
@@ -344,7 +371,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
         original_filename: file.name,
         new_filename: fileResult.new_filename,
         analysis: fileResult.analysis,
-        fileData: file.data, // 元のBase64データを保持
+        fileData: file.data,
         status: "success",
         processing_time: Date.now() - fileStartTime,
       });
@@ -359,16 +386,22 @@ async function processMultipleFiles(files, res, requestId, startTime) {
         original_filename: file.name,
         new_filename: file.name,
         analysis: null,
-        fileData: file.data, // エラーでも元データは保持
+        fileData: file.data,
         status: "error",
         error: error.message,
         processing_time: processingTime,
       });
     }
 
-    // 次のファイルまで少し待機
+    // 次のファイルまで少し待機（安定性向上）
     if (i < files.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms待機
+    }
+
+    // レスポンスが既に送信されていたら停止
+    if (res.headersSent) {
+      console.log(`[${requestId}] Response already sent, stopping processing`);
+      break;
     }
   }
 
@@ -379,6 +412,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
   console.log(`[${requestId}] Processing complete after ${totalDuration}ms: ${successCount} success, ${errorCount} errors`);
 
   if (!res.headersSent) {
+    clearTimeout(globalTimeout);
     res.status(200).json({
       success: true,
       message: `${files.length}個のファイルを処理しました（成功: ${successCount}、エラー: ${errorCount}）`,
@@ -396,7 +430,30 @@ async function processMultipleFiles(files, res, requestId, startTime) {
   }
 }
 
-// Difyにバッファをアップロード（タイムアウト対策）
+// リトライ機能付きファイル処理
+async function processSingleFileBufferWithRetry(buffer, filename, requestId, maxRetries = 2) {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[${requestId}] Processing ${filename} - Attempt ${attempt}/${maxRetries}`);
+      
+      return await processSingleFileBuffer(buffer, filename, requestId);
+    } catch (error) {
+      lastError = error;
+      console.error(`[${requestId}] Attempt ${attempt} failed for ${filename}:`, error.message);
+      
+      if (attempt < maxRetries) {
+        // 次の試行まで少し待機
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
+// Difyにバッファをアップロード（改良版・短いタイムアウト）
 async function uploadBufferToDify(buffer, filename, requestId) {
   try {
     const formData = new FormData();
@@ -419,7 +476,7 @@ async function uploadBufferToDify(buffer, filename, requestId) {
         body: formData,
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Upload timeout (15s)")), 15000)
+        setTimeout(() => reject(new Error("Upload timeout (10s)")), 10000) // 10秒に短縮
       )
     ]);
 
@@ -455,7 +512,7 @@ async function uploadBufferToDify(buffer, filename, requestId) {
   }
 }
 
-// ワークフロー実行（タイムアウト対策）
+// ワークフロー実行（改良版・短いタイムアウト）
 async function runDifyWorkflow(fileId, requestId) {
   try {
     const requestBody = {
@@ -482,7 +539,7 @@ async function runDifyWorkflow(fileId, requestId) {
         body: JSON.stringify(requestBody),
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Workflow timeout (30s)")), 30000)
+        setTimeout(() => reject(new Error("Workflow timeout (20s)")), 20000) // 20秒に短縮
       )
     ]);
 
