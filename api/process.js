@@ -246,6 +246,10 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
       });
     }
 
+    // ファイルをBase64に変換
+    const buffer = fs.readFileSync(uploadedFile.filepath);
+    const base64Data = `data:${uploadedFile.mimetype};base64,${buffer.toString('base64')}`;
+
     // 単一ファイル処理（タイムアウト付き）
     const result = await Promise.race([
       processSingleFile(uploadedFile, requestId),
@@ -253,6 +257,9 @@ async function handleFormDataRequest(req, res, requestId, startTime) {
         setTimeout(() => reject(new Error("Single file processing timeout")), 30000)
       )
     ]);
+    
+    // 結果にBase64データを追加
+    result.fileData = base64Data;
     
     return res.status(200).json({
       success: true,
@@ -337,7 +344,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
         original_filename: file.name,
         new_filename: fileResult.new_filename,
         analysis: fileResult.analysis,
-        downloadUrl: `/api/download/${encodeURIComponent(fileResult.new_filename)}`,
+        fileData: file.data, // 元のBase64データを保持
         status: "success",
         processing_time: Date.now() - fileStartTime,
       });
@@ -352,7 +359,7 @@ async function processMultipleFiles(files, res, requestId, startTime) {
         original_filename: file.name,
         new_filename: file.name,
         analysis: null,
-        downloadUrl: null,
+        fileData: file.data, // エラーでも元データは保持
         status: "error",
         error: error.message,
         processing_time: processingTime,
