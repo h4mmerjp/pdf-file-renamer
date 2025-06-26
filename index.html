@@ -1019,13 +1019,136 @@ function formatFileSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
-// API接続テスト
+// API接続テスト（統合版health.jsに対応）
 async function testApiConnection() {
-  const testEndpoints = [
-    { url: "/api/hello", name: "Hello API" },
-    { url: "/api/health", name: "Health Check" },
-    { url: "/api/test-dify", name: "Dify Connection Test" },
-  ];
+  debugLog("API接続テスト開始");
+  updateStatus("checking", "接続テスト中...");
+
+  try {
+    // 統合されたhealth APIを呼び出し
+    const response = await fetch("/api/health", {
+      method: "GET",
+      cache: "no-cache",
+      headers: { Accept: "application/json" },
+    });
+
+    debugLog(`Health API レスポンス: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      debugLog("Health API エラー", errorText);
+      
+      updateStatus("disconnected", "API接続エラー");
+      showMessage(`APIに接続できませんでした (${response.status})`, "error");
+      return;
+    }
+
+    const data = await response.json();
+    debugLog("Health API 成功", data);
+
+    // レスポンスデータから状態を判定
+    const systemStatus = data.status || "unknown";
+    const difyStatus = data.dify_connection?.status || "unknown";
+    const isReadyForProcessing = data.configuration_summary?.ready_for_processing || false;
+
+    // UI状態を更新
+    if (isReadyForProcessing && difyStatus === "connected") {
+      updateStatus("connected", "Dify API接続OK");
+      showMessage("すべてのシステムが正常に動作しています。ファイル処理の準備が完了しました。", "success");
+    } else if (systemStatus === "healthy" || systemStatus === "warning") {
+      if (difyStatus === "not_configured") {
+        updateStatus("disconnected", "Dify未設定");
+        showMessage("基本APIは動作していますが、Dify APIが設定されていません。環境変数を確認してください。", "warning");
+      } else if (difyStatus === "failed" || difyStatus === "error") {
+        updateStatus("disconnected", "Dify接続エラー");
+        showMessage(`基本APIは動作していますが、Dify APIに接続できません: ${data.dify_connection.message}`, "error");
+      } else {
+        updateStatus("connected", "API接続OK");
+        showMessage("基本APIは正常ですが、Difyの状態を確認してください。", "warning");
+      }
+    } else {
+      updateStatus("disconnected", "システムエラー");
+      showMessage(`システムに問題があります: ${data.message}`, "error");
+    }
+
+    // デバッグ情報の詳細表示
+    if (debugMode) {
+      debugLog("システム詳細情報", {
+        overall_status: systemStatus,
+        dify_status: difyStatus,
+        ready_for_processing: isReadyForProcessing,
+        response_time: data.response_time,
+        dify_response_time: data.dify_connection?.response_time,
+        environment_vars: data.system?.environment_vars
+      });
+    }
+
+  } catch (error) {
+    debugLog("API接続テスト例外", error.message);
+    updateStatus("disconnected", "接続失敗");
+    showMessage(`API接続テストに失敗しました: ${error.message}`, "error");
+  }
+}
+
+// より詳細なシステム情報を表示する関数（オプション）
+async function showDetailedSystemInfo() {
+  try {
+    const response = await fetch("/api/health");
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // 詳細情報をモーダルやパネルで表示
+    const detailsHtml = `
+      <div class="system-details">
+        <h3>📊 システム詳細情報</h3>
+        
+        <div class="detail-section">
+          <h4>🖥️ システム状態</h4>
+          <p><strong>ステータス:</strong> ${data.status}</p>
+          <p><strong>稼働時間:</strong> ${Math.round(data.system?.uptime || 0)}秒</p>
+          <p><strong>レスポンス時間:</strong> ${data.response_time}ms</p>
+        </div>
+
+        <div class="detail-section">
+          <h4>🔗 Dify接続状態</h4>
+          <p><strong>接続状態:</strong> ${data.dify_connection?.status}</p>
+          <p><strong>メッセージ:</strong> ${data.dify_connection?.message}</p>
+          ${data.dify_connection?.response_time ? 
+            `<p><strong>応答時間:</strong> ${data.dify_connection.response_time}ms</p>` : ''}
+          ${data.dify_connection?.error ? 
+            `<p><strong>エラー:</strong> ${data.dify_connection.error}</p>` : ''}
+        </div>
+
+        <div class="detail-section">
+          <h4>⚙️ 設定状況</h4>
+          <p><strong>Dify設定:</strong> ${data.configuration_summary?.dify_configured ? '✅ 完了' : '❌ 未完了'}</p>
+          <p><strong>処理準備:</strong> ${data.configuration_summary?.ready_for_processing ? '✅ 準備完了' : '❌ 未準備'}</p>
+        </div>
+
+        <div class="detail-section">
+          <h4>🔧 環境変数</h4>
+          <p><strong>DIFY_API_KEY:</strong> ${data.system?.environment_vars?.DIFY_API_KEY}</p>
+          <p><strong>DIFY_BASE_URL:</strong> ${data.system?.environment_vars?.DIFY_BASE_URL}</p>
+        </div>
+      </div>
+    `;
+
+    // デバッグパネルに表示
+    const debugContent = document.getElementById("debugContent");
+    if (debugContent) {
+      debugContent.innerHTML = detailsHtml + debugContent.innerHTML;
+    } else {
+      // デバッグパネルが表示されていない場合はアラートで表示
+      alert(`システム情報:\n状態: ${data.status}\nDify接続: ${data.dify_connection?.status}\n処理準備: ${data.configuration_summary?.ready_for_processing ? '完了' : '未完了'}`);
+    }
+
+  } catch (error) {
+    showMessage(`システム情報の取得に失敗しました: ${error.message}`, "error");
+  }
+}
 
   debugLog("API接続テスト開始");
   updateStatus("checking", "接続テスト中...");
