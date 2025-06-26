@@ -299,7 +299,7 @@
 
       .debug-header {
         display: flex;
-        justify-content: between;
+        justify-content: space-between;
         align-items: center;
         margin-bottom: 10px;
       }
@@ -911,3 +911,237 @@
           
           updateFileList();
           showMessage(`処理中にエラーが発生しました: ${error.message}`, "error");
+        } finally {
+          // UI状態をリセット
+          isProcessing = false;
+          if (processBtn) {
+            processBtn.innerHTML = "ファイルを処理する";
+            processBtn.disabled = selectedFiles.length === 0;
+          }
+          updateStats();
+        }
+      }
+
+      // Base64からファイルダウンロード
+      function downloadFromBase64(base64Data, filename) {
+        try {
+          debugLog(`Base64ダウンロード開始: ${filename}`);
+          
+          // Base64データをBlobに変換
+          const base64Match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+          if (!base64Match) {
+            throw new Error("Invalid base64 data format");
+          }
+          
+          const mimeType = base64Match[1];
+          const base64String = base64Match[2];
+          
+          // Base64をバイナリに変換
+          const byteCharacters = atob(base64String);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          
+          // Blobを作成
+          const blob = new Blob([byteArray], { type: mimeType });
+          
+          // ダウンロードリンクを作成
+          const downloadUrl = URL.createObjectURL(blob);
+          const downloadLink = document.createElement('a');
+          downloadLink.href = downloadUrl;
+          downloadLink.download = filename;
+          downloadLink.style.display = 'none';
+          
+          // DOMに追加してクリック
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          
+          // クリーンアップ
+          document.body.removeChild(downloadLink);
+          URL.revokeObjectURL(downloadUrl);
+          
+          debugLog(`ダウンロード完了: ${filename}`);
+          showMessage(`${filename} をダウンロードしました。`, "success");
+          
+        } catch (error) {
+          debugLog(`ダウンロードエラー: ${filename}`, error);
+          showMessage(`ダウンロードに失敗しました: ${error.message}`, "error");
+        }
+      }
+
+      // 単一ファイルダウンロード
+      function downloadFile(fileId) {
+        const file = selectedFiles.find(f => f.id === fileId);
+        if (!file) {
+          showMessage("ファイルが見つかりません。", "error");
+          return;
+        }
+
+        if (file.status !== "success") {
+          showMessage("処理が完了していないファイルはダウンロードできません。", "warning");
+          return;
+        }
+
+        // 処理済みデータがある場合はそれを使用、なければ元データを使用
+        const fileData = file.processedFileData || file.data;
+        const filename = file.newFilename || file.name;
+
+        if (!fileData) {
+          showMessage("ファイルデータが見つかりません。", "error");
+          return;
+        }
+
+        debugLog(`ファイルダウンロード: ${filename}`, { 
+          originalName: file.name, 
+          newName: filename,
+          hasProcessedData: !!file.processedFileData 
+        });
+        
+        downloadFromBase64(fileData, filename);
+      }
+
+      // 全ファイル一括ダウンロード
+      function downloadAllFiles() {
+        const successFiles = processedFiles.filter(f => f.status === "success");
+        
+        if (successFiles.length === 0) {
+          showMessage("ダウンロード可能なファイルがありません。", "warning");
+          return;
+        }
+
+        debugLog(`一括ダウンロード開始: ${successFiles.length}ファイル`);
+        
+        // 順次ダウンロード（ブラウザのダウンロード制限を考慮）
+        successFiles.forEach((file, index) => {
+          setTimeout(() => {
+            downloadFile(file.id);
+          }, index * 1000); // 1秒間隔でダウンロード
+        });
+
+        showMessage(`${successFiles.length}個のファイルのダウンロードを開始しました。`, "success");
+      }
+
+      // アップロードエリアクリック処理
+      function handleUploadClick() {
+        debugLog("アップロードエリアがクリックされました");
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) {
+          fileInput.click();
+        }
+      }
+
+      // ドラッグ&ドロップ処理
+      function setupDragAndDrop() {
+        const uploadArea = document.getElementById("uploadArea");
+        
+        uploadArea.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          uploadArea.classList.add("dragover");
+        });
+
+        uploadArea.addEventListener("dragleave", (e) => {
+          e.preventDefault();
+          uploadArea.classList.remove("dragover");
+        });
+
+        uploadArea.addEventListener("drop", (e) => {
+          e.preventDefault();
+          uploadArea.classList.remove("dragover");
+
+          const files = Array.from(e.dataTransfer.files);
+          debugLog("ファイルドロップ", { fileCount: files.length });
+
+          const supportedFiles = files.filter(file => {
+            const supportedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
+            return supportedTypes.includes(file.type);
+          });
+
+          if (supportedFiles.length > 0) {
+            addFiles(supportedFiles);
+          } else {
+            showMessage("サポートされているファイル形式をドロップしてください。", "warning");
+          }
+        });
+      }
+
+      // イベントリスナーの設定
+      function setupEventListeners() {
+        debugLog("イベントリスナー設定開始");
+
+        // ファイル入力
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) {
+          fileInput.addEventListener("change", handleFileSelect);
+        }
+
+        // アップロードエリア
+        const uploadArea = document.getElementById("uploadArea");
+        if (uploadArea) {
+          uploadArea.addEventListener("click", handleUploadClick);
+        }
+
+        // ドラッグ&ドロップ設定
+        setupDragAndDrop();
+
+        // 処理ボタン
+        const processBtn = document.getElementById("processBtn");
+        if (processBtn) {
+          processBtn.addEventListener("click", processFiles);
+        }
+
+        debugLog("すべてのイベントリスナー設定完了");
+      }
+
+      // 初期化
+      function initialize() {
+        debugLog("アプリケーション初期化開始");
+
+        // 基本的な環境情報を表示
+        debugLog("環境情報", {
+          userAgent: navigator.userAgent,
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+        });
+
+        // イベントリスナーを設定
+        setupEventListeners();
+
+        // 統計情報初期化
+        updateStats();
+
+        // API接続テストを実行
+        testApiConnection();
+
+        debugLog("初期化完了");
+      }
+
+      // DOMが読み込まれた後に初期化
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initialize);
+      } else {
+        initialize();
+      }
+
+      // エラーハンドリング
+      window.addEventListener("error", (event) => {
+        debugLog("グローバルエラー", {
+          message: event.message,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          error: event.error?.toString(),
+        });
+      });
+
+      // 未処理のPromise rejectionをキャッチ
+      window.addEventListener("unhandledrejection", (event) => {
+        debugLog("未処理のPromise rejection", {
+          reason: event.reason?.toString(),
+          promise: event.promise,
+        });
+      });
+    </script>
+  </body>
+</html>
