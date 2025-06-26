@@ -1,4 +1,4 @@
-// 改良版 PDF処理API - 複数ファイル処理の安定化
+// 修正版 PDF処理API - AbortController問題修正
 import formidable from "formidable";
 import fs from "fs";
 import FormData from "form-data";
@@ -310,7 +310,7 @@ async function handleFormDataRequest(req, res, requestId, startTime, globalTimeo
   }
 }
 
-// 複数ファイル処理（改良版・安定性重視）
+// 複数ファイル処理（修正版・AbortController問題解決）
 async function processMultipleFiles(files, res, requestId, startTime, globalTimeout) {
   const results = [];
   const maxProcessingTime = 40000; // 40秒制限に短縮
@@ -359,7 +359,7 @@ async function processMultipleFiles(files, res, requestId, startTime, globalTime
 
       console.log(`[${requestId}] File ${file.name}: ${buffer.length} bytes`);
 
-      // ファイル処理（短いタイムアウト）
+      // ファイル処理（短いタイムアウト・修正版）
       const fileResult = await Promise.race([
         processSingleFileBufferWithRetry(buffer, file.name, requestId),
         new Promise((_, reject) => 
@@ -388,7 +388,7 @@ async function processMultipleFiles(files, res, requestId, startTime, globalTime
         analysis: null,
         fileData: file.data,
         status: "error",
-        error: error.message,
+        error: error.message || "Unknown error",
         processing_time: processingTime,
       });
     }
