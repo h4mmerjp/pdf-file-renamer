@@ -462,686 +462,838 @@
     </div>
 
     <script>
-      // グローバル変数
-      let selectedFiles = [];
-      let processedFiles = [];
-      let isProcessing = false;
-      let debugMode = false;
-      let processingStartTime = 0;
+     // 完全版改良フロントエンドJavaScript - index.htmlの<script>タグ内にコピー用
+// グローバル変数
+let selectedFiles = [];
+let processedFiles = [];
+let isProcessing = false;
+let debugMode = false;
+let processingStartTime = 0;
+let processingAbortController = null;
 
-      // デバッグログ関数
-      function debugLog(message, data = null) {
-        const timestamp = new Date().toLocaleTimeString();
-        console.log(`[DEBUG ${timestamp}] ${message}`, data || "");
+// デバッグログ関数
+function debugLog(message, data = null) {
+  const timestamp = new Date().toLocaleTimeString();
+  console.log(`[DEBUG ${timestamp}] ${message}`, data || "");
 
-        if (debugMode) {
-          const debugContent = document.getElementById("debugContent");
-          if (debugContent) {
-            const logEntry = document.createElement("div");
-            logEntry.innerHTML = `<span style="color: #569cd6;">[${timestamp}]</span> ${message}`;
-            if (data) {
-              logEntry.innerHTML += `<br><span style="color: #9cdcfe; margin-left: 20px;">${JSON.stringify(data, null, 2)}</span>`;
-            }
-            debugContent.appendChild(logEntry);
-            debugContent.scrollTop = debugContent.scrollHeight;
-          }
-        }
+  if (debugMode) {
+    const debugContent = document.getElementById("debugContent");
+    if (debugContent) {
+      const logEntry = document.createElement("div");
+      logEntry.innerHTML = `<span style="color: #569cd6;">[${timestamp}]</span> ${message}`;
+      if (data) {
+        logEntry.innerHTML += `<br><span style="color: #9cdcfe; margin-left: 20px;">${JSON.stringify(data, null, 2)}</span>`;
+      }
+      debugContent.appendChild(logEntry);
+      debugContent.scrollTop = debugContent.scrollHeight;
+    }
+  }
+}
+
+// デバッグパネル切替
+function toggleDebugPanel() {
+  debugMode = !debugMode;
+  const debugPanel = document.getElementById("debugPanel");
+  debugPanel.style.display = debugMode ? "block" : "none";
+
+  if (debugMode) {
+    debugLog("デバッグモード開始");
+  }
+}
+
+// デバッグログクリア
+function clearDebugLogs() {
+  const debugContent = document.getElementById("debugContent");
+  if (debugContent) {
+    debugContent.innerHTML = "";
+  }
+}
+
+// 状態表示更新
+function updateStatus(status, text) {
+  debugLog(`状態更新: ${status} - ${text}`);
+
+  const indicator = document.getElementById("statusIndicator");
+  const statusText = document.getElementById("statusText");
+
+  if (indicator && statusText) {
+    indicator.className = `status-indicator status-${status}`;
+    statusText.textContent = text;
+  }
+}
+
+// 統計情報更新
+function updateStats() {
+  document.getElementById("totalFiles").textContent = selectedFiles.length;
+  document.getElementById("processedFiles").textContent = processedFiles.length;
+  
+  const successCount = processedFiles.filter(f => f.status === "success").length;
+  const successRate = processedFiles.length > 0 ? Math.round((successCount / processedFiles.length) * 100) : 0;
+  document.getElementById("successRate").textContent = `${successRate}%`;
+  
+  const processingTime = processingStartTime > 0 ? Math.round((Date.now() - processingStartTime) / 1000) : 0;
+  document.getElementById("processingTime").textContent = `${processingTime}s`;
+
+  // 全ダウンロードボタンの状態更新
+  const downloadAllBtn = document.getElementById("downloadAllBtn");
+  downloadAllBtn.disabled = successCount === 0;
+}
+
+// メッセージ表示
+function showMessage(message, type = "info") {
+  debugLog(`メッセージ表示: ${type} - ${message}`);
+
+  const messageDiv = document.getElementById("messageDisplay");
+  if (!messageDiv) return;
+
+  const typeClass = {
+    error: "error-message",
+    success: "success-message", 
+    warning: "warning-message",
+    info: "info-message"
+  }[type] || "info-message";
+
+  messageDiv.innerHTML = `<div class="${typeClass}">${message}</div>`;
+
+  // エラー以外は5秒後に自動削除
+  if (type !== "error") {
+    setTimeout(() => {
+      messageDiv.innerHTML = "";
+    }, 5000);
+  }
+}
+
+// ファイル選択処理
+function handleFileSelect(event) {
+  debugLog("ファイル選択イベント発生");
+
+  const files = event.target.files;
+  if (files.length === 0) return;
+
+  addFiles(Array.from(files));
+}
+
+// ファイルをBase64に変換
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ファイル追加（改良版 - より厳格な制限）
+async function addFiles(files) {
+  debugLog("ファイル追加処理開始", { fileCount: files.length });
+
+  const maxFiles = 6; // 最大ファイル数を6に制限
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  const maxTotalSize = 30 * 1024 * 1024; // 全体で30MB制限
+  let addedCount = 0;
+  let totalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+
+  for (const file of files) {
+    try {
+      // ファイル数制限チェック
+      if (selectedFiles.length >= maxFiles) {
+        showMessage(`最大${maxFiles}ファイルまでしか選択できません。`, "warning");
+        break;
       }
 
-      // デバッグパネル切替
-      function toggleDebugPanel() {
-        debugMode = !debugMode;
-        const debugPanel = document.getElementById("debugPanel");
-        debugPanel.style.display = debugMode ? "block" : "none";
-
-        if (debugMode) {
-          debugLog("デバッグモード開始");
-        }
+      // 合計サイズチェック
+      if (totalSize + file.size > maxTotalSize) {
+        showMessage(`合計ファイルサイズが30MBを超えるため、${file.name}を追加できません。`, "warning");
+        continue;
       }
 
-      // デバッグログクリア
-      function clearDebugLogs() {
-        const debugContent = document.getElementById("debugContent");
-        if (debugContent) {
-          debugContent.innerHTML = "";
-        }
+      // 個別ファイルサイズチェック
+      if (file.size > maxSize) {
+        debugLog(`ファイルサイズエラー: ${file.name} (${file.size} bytes)`);
+        showMessage(`${file.name}: ファイルサイズが10MBを超えています。`, "warning");
+        continue;
       }
 
-      // 状態表示更新
-      function updateStatus(status, text) {
-        debugLog(`状態更新: ${status} - ${text}`);
-
-        const indicator = document.getElementById("statusIndicator");
-        const statusText = document.getElementById("statusText");
-
-        if (indicator && statusText) {
-          indicator.className = `status-indicator status-${status}`;
-          statusText.textContent = text;
-        }
+      // ファイル形式チェック（より厳格に）
+      const supportedTypes = [
+        "application/pdf", 
+        "image/jpeg", 
+        "image/jpg", 
+        "image/png"
+      ];
+      if (!supportedTypes.includes(file.type)) {
+        debugLog(`ファイル形式エラー: ${file.name} (${file.type})`);
+        showMessage(`${file.name}: サポートされていないファイル形式です（PDF、JPEG、PNGのみ）。`, "warning");
+        continue;
       }
 
-      // 統計情報更新
-      function updateStats() {
-        document.getElementById("totalFiles").textContent = selectedFiles.length;
-        document.getElementById("processedFiles").textContent = processedFiles.length;
-        
-        const successCount = processedFiles.filter(f => f.status === "success").length;
-        const successRate = processedFiles.length > 0 ? Math.round((successCount / processedFiles.length) * 100) : 0;
-        document.getElementById("successRate").textContent = `${successRate}%`;
-        
-        const processingTime = processingStartTime > 0 ? Math.round((Date.now() - processingStartTime) / 1000) : 0;
-        document.getElementById("processingTime").textContent = `${processingTime}s`;
-
-        // 全ダウンロードボタンの状態更新
-        const downloadAllBtn = document.getElementById("downloadAllBtn");
-        downloadAllBtn.disabled = successCount === 0;
+      // 重複チェック
+      const isDuplicate = selectedFiles.some(f => f.name === file.name && f.size === file.size);
+      if (isDuplicate) {
+        debugLog(`重複ファイル: ${file.name}`);
+        continue;
       }
 
-      // メッセージ表示
-      function showMessage(message, type = "info") {
-        debugLog(`メッセージ表示: ${type} - ${message}`);
+      debugLog(`ファイル処理開始: ${file.name}`);
 
-        const messageDiv = document.getElementById("messageDisplay");
-        if (!messageDiv) return;
-
-        const typeClass = {
-          error: "error-message",
-          success: "success-message", 
-          warning: "warning-message",
-          info: "info-message"
-        }[type] || "info-message";
-
-        messageDiv.innerHTML = `<div class="${typeClass}">${message}</div>`;
-
-        // エラー以外は5秒後に自動削除
-        if (type !== "error") {
-          setTimeout(() => {
-            messageDiv.innerHTML = "";
-          }, 5000);
-        }
+      // Base64に変換（エラーハンドリング強化）
+      let base64Data;
+      try {
+        base64Data = await fileToBase64(file);
+      } catch (base64Error) {
+        debugLog(`Base64変換エラー: ${file.name}`, base64Error);
+        showMessage(`${file.name}: ファイル読み込みに失敗しました。`, "error");
+        continue;
       }
 
-      // ファイル選択処理
-      function handleFileSelect(event) {
-        debugLog("ファイル選択イベント発生");
+      const fileData = {
+        id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        file: file,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        data: base64Data,
+        status: "pending",
+        progress: 0
+      };
 
-        const files = event.target.files;
-        if (files.length === 0) return;
+      selectedFiles.push(fileData);
+      totalSize += file.size;
+      addedCount++;
+      debugLog(`ファイル追加完了: ${file.name}`);
+    } catch (error) {
+      debugLog(`ファイル処理エラー: ${file.name}`, error);
+      showMessage(`${file.name}: ファイル処理中にエラーが発生しました。`, "error");
+    }
+  }
 
-        addFiles(Array.from(files));
+  if (addedCount > 0) {
+    showMessage(`${addedCount}個のファイルを追加しました。`, "success");
+  }
+
+  updateFileList();
+  updateStats();
+}
+
+// ファイル削除
+function removeFile(fileId) {
+  const index = selectedFiles.findIndex(f => f.id === fileId);
+  if (index !== -1) {
+    debugLog(`ファイル削除: ${selectedFiles[index].name}`);
+    selectedFiles.splice(index, 1);
+    updateFileList();
+    updateStats();
+  }
+}
+
+// 全ファイルクリア
+function clearAllFiles() {
+  selectedFiles = [];
+  processedFiles = [];
+  updateFileList();
+  updateStats();
+  showMessage("全ファイルをクリアしました。", "info");
+}
+
+// 処理中断機能
+function abortProcessing() {
+  if (processingAbortController) {
+    processingAbortController.abort();
+    debugLog("Processing aborted by user");
+    showMessage("処理を中断しました。", "warning");
+  }
+}
+
+// バッチ処理関数
+async function processBatch(files, batchNumber, totalBatches) {
+  debugLog(`Batch ${batchNumber}/${totalBatches} processing start`, {
+    fileCount: files.length,
+    files: files.map(f => ({ name: f.name, size: f.size }))
+  });
+
+  // API呼び出し用のデータを準備
+  const filesData = files.map((fileData) => ({
+    name: fileData.name,
+    size: fileData.size,
+    type: fileData.type,
+    data: fileData.data,
+  }));
+
+  const response = await fetch("/api/process", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      files: filesData,
+      timestamp: new Date().toISOString(),
+      batch: batchNumber,
+      totalBatches: totalBatches,
+    }),
+    signal: processingAbortController.signal, // 中断シグナルを追加
+  });
+
+  debugLog(`Batch ${batchNumber} API Response: ${response.status}`);
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`API Error (${response.status}): ${errorData.message || errorData.error}`);
+  }
+
+  const data = await response.json();
+  debugLog(`Batch ${batchNumber} Success:`, data);
+
+  if (!data.results) {
+    throw new Error("Invalid API response: missing results");
+  }
+
+  return data.results;
+}
+
+// ファイル処理（改良版 - より安定したエラー処理）
+async function processFiles() {
+  if (selectedFiles.length === 0) {
+    showMessage("ファイルが選択されていません。", "warning");
+    return;
+  }
+
+  if (isProcessing) {
+    // 処理中の場合は中断オプションを提供
+    if (confirm("現在処理中です。処理を中断しますか？")) {
+      abortProcessing();
+    }
+    return;
+  }
+
+  isProcessing = true;
+  processingStartTime = Date.now();
+  debugLog("ファイル処理開始", { fileCount: selectedFiles.length });
+
+  // 処理用のAbortControllerを作成
+  processingAbortController = new AbortController();
+
+  const processBtn = document.getElementById("processBtn");
+  if (processBtn) {
+    processBtn.innerHTML = '<div class="spinner"></div>処理中... <small>(クリックで中断)</small>';
+    processBtn.disabled = false; // 中断できるように有効に
+    processBtn.onclick = abortProcessing;
+  }
+
+  // プログレス表示の改善
+  let processedCount = 0;
+
+  try {
+    // ファイル状態を処理中に更新
+    selectedFiles.forEach((file, index) => {
+      file.status = index === 0 ? "processing" : "pending";
+      file.progress = 0;
+    });
+    updateFileList();
+
+    // より小さい単位でファイルを処理（2ファイルずつ）
+    const batchSize = 2;
+    const totalBatches = Math.ceil(selectedFiles.length / batchSize);
+
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const startIndex = batchIndex * batchSize;
+      const endIndex = Math.min(startIndex + batchSize, selectedFiles.length);
+      const batch = selectedFiles.slice(startIndex, endIndex);
+
+      debugLog(`Processing batch ${batchIndex + 1}/${totalBatches}`, { 
+        batchSize: batch.length,
+        fileNames: batch.map(f => f.name)
+      });
+
+      // 中断チェック
+      if (processingAbortController.signal.aborted) {
+        throw new Error("Processing aborted by user");
       }
 
-      // ファイルをBase64に変換
-      function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      }
+      // バッチ内のファイルを処理中状態に
+      batch.forEach(file => {
+        file.status = "processing";
+        file.progress = 10;
+      });
+      updateFileList();
 
-      // ファイル追加
-      async function addFiles(files) {
-        debugLog("ファイル追加処理開始", { fileCount: files.length });
-
-        const maxFiles = 10;
-        const maxSize = 15 * 1024 * 1024; // 15MB
-        let addedCount = 0;
-
-        for (const file of files) {
-          try {
-            // ファイル数制限チェック
-            if (selectedFiles.length >= maxFiles) {
-              showMessage(`最大${maxFiles}ファイルまでしか選択できません。`, "warning");
-              break;
-            }
-
-            // ファイル形式チェック
-            const supportedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
-            if (!supportedTypes.includes(file.type)) {
-              debugLog(`ファイル形式エラー: ${file.name} (${file.type})`);
-              showMessage(`${file.name}: サポートされていないファイル形式です。`, "warning");
-              continue;
-            }
-
-            // ファイルサイズチェック
-            if (file.size > maxSize) {
-              debugLog(`ファイルサイズエラー: ${file.name} (${file.size} bytes)`);
-              showMessage(`${file.name}: ファイルサイズが15MBを超えています。`, "warning");
-              continue;
-            }
-
-            // 重複チェック
-            const isDuplicate = selectedFiles.some(f => f.name === file.name && f.size === file.size);
-            if (isDuplicate) {
-              debugLog(`重複ファイル: ${file.name}`);
-              continue;
-            }
-
-            debugLog(`ファイル処理開始: ${file.name}`);
-
-            // Base64に変換
-            const base64Data = await fileToBase64(file);
-
-            const fileData = {
-              id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              file: file,
-              name: file.name,
-              size: file.size,
-              type: file.type,
-              data: base64Data,
-              status: "pending",
-              progress: 0
-            };
-
-            selectedFiles.push(fileData);
-            addedCount++;
-            debugLog(`ファイル追加完了: ${file.name}`);
-          } catch (error) {
-            debugLog(`ファイル処理エラー: ${file.name}`, error);
-            showMessage(`${file.name}: ファイル読み込みに失敗しました。`, "error");
-          }
-        }
-
-        if (addedCount > 0) {
-          showMessage(`${addedCount}個のファイルを追加しました。`, "success");
-        }
-
-        updateFileList();
-        updateStats();
-      }
-
-      // ファイル削除
-      function removeFile(fileId) {
-        const index = selectedFiles.findIndex(f => f.id === fileId);
-        if (index !== -1) {
-          debugLog(`ファイル削除: ${selectedFiles[index].name}`);
-          selectedFiles.splice(index, 1);
-          updateFileList();
-          updateStats();
-        }
-      }
-
-      // 全ファイルクリア
-      function clearAllFiles() {
-        selectedFiles = [];
-        processedFiles = [];
-        updateFileList();
-        updateStats();
-        showMessage("全ファイルをクリアしました。", "info");
-      }
-
-      // ファイルリスト更新
-      function updateFileList() {
-        debugLog("ファイルリスト更新", { fileCount: selectedFiles.length });
-
-        const fileList = document.getElementById("selectedFiles");
-        const processBtn = document.getElementById("processBtn");
-
-        if (!fileList || !processBtn) return;
-
-        if (selectedFiles.length === 0) {
-          fileList.innerHTML = "";
-          processBtn.disabled = true;
-          return;
-        }
-
-        processBtn.disabled = isProcessing;
-
-        fileList.innerHTML = selectedFiles
-          .map((fileData) => {
-            let statusClass = "";
-            let statusText = "";
-            let progressBar = "";
-            let actions = "";
-
-            switch (fileData.status) {
-              case "pending":
-                statusClass = "";
-                statusText = "待機中";
-                actions = `<button class="btn btn-remove" onclick="removeFile('${fileData.id}')" ${isProcessing ? "disabled" : ""}>削除</button>`;
-                break;
-              case "processing":
-                statusClass = "processing";
-                statusText = "処理中...";
-                progressBar = `
-                  <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${fileData.progress}%"></div>
-                  </div>
-                `;
-                break;
-              case "success":
-                statusClass = "success";
-                statusText = `✅ 完了: ${fileData.newFilename}`;
-                actions = `<button class="btn btn-download" onclick="downloadFile('${fileData.id}')">ダウンロード</button>`;
-                break;
-              case "error":
-                statusClass = "error";
-                statusText = `❌ エラー: ${fileData.error}`;
-                actions = `<button class="btn btn-remove" onclick="removeFile('${fileData.id}')">削除</button>`;
-                break;
-            }
-
-            return `
-              <div class="file-item ${statusClass}">
-                <div class="file-info">
-                  <div class="file-icon">📄</div>
-                  <div class="file-details">
-                    <div class="file-name">${fileData.name}</div>
-                    <div class="file-size">${formatFileSize(fileData.size)}</div>
-                    <div class="file-status">${statusText}</div>
-                    ${progressBar}
-                  </div>
-                </div>
-                <div class="file-actions">
-                  ${actions}
-                </div>
-              </div>
-            `;
+      try {
+        // タイムアウト付きでバッチ処理
+        const batchResult = await Promise.race([
+          processBatch(batch, batchIndex + 1, totalBatches),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Batch processing timeout")), 45000)
+          ),
+          // 中断シグナルの監視
+          new Promise((_, reject) => {
+            processingAbortController.signal.addEventListener('abort', () => {
+              reject(new Error("Processing aborted"));
+            });
           })
-          .join("");
-      }
+        ]);
 
-      // ファイルサイズフォーマット
-      function formatFileSize(bytes) {
-        if (bytes === 0) return "0 Bytes";
-        const k = 1024;
-        const sizes = ["Bytes", "KB", "MB", "GB"];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-      }
-
-      // API接続テスト
-      async function testApiConnection() {
-        const testEndpoints = [
-          { url: "/api/hello", name: "Hello API" },
-          { url: "/api/health", name: "Health Check" },
-          { url: "/api/test-dify", name: "Dify Connection Test" },
-        ];
-
-        debugLog("API接続テスト開始");
-        updateStatus("checking", "接続テスト中...");
-
-        let successCount = 0;
-        let difyConnected = false;
-
-        for (const endpoint of testEndpoints) {
-          try {
-            debugLog(`テスト開始: ${endpoint.name} (${endpoint.url})`);
-
-            const response = await fetch(endpoint.url, {
-              method: "GET",
-              cache: "no-cache",
-              headers: { Accept: "application/json" },
-            });
-
-            debugLog(`${endpoint.name} レスポンス: ${response.status} ${response.statusText}`);
-
-            if (response.ok) {
-              const data = await response.json();
-              debugLog(`${endpoint.name} 成功`, data);
-              successCount++;
-
-              if (endpoint.url === "/api/test-dify" && data.dify_connection === "connected") {
-                difyConnected = true;
-              }
-            } else {
-              const errorText = await response.text();
-              debugLog(`${endpoint.name} エラー`, errorText);
+        // 成功した結果を反映
+        batchResult.forEach((result, index) => {
+          const fileIndex = startIndex + index;
+          if (selectedFiles[fileIndex]) {
+            selectedFiles[fileIndex].status = result.status;
+            selectedFiles[fileIndex].newFilename = result.new_filename;
+            selectedFiles[fileIndex].analysis = result.analysis;
+            selectedFiles[fileIndex].error = result.error;
+            selectedFiles[fileIndex].progress = result.status === "success" ? 100 : 0;
+            
+            if (result.status === "success" && result.fileData) {
+              selectedFiles[fileIndex].processedFileData = result.fileData;
+              processedFiles.push(selectedFiles[fileIndex]);
             }
-          } catch (error) {
-            debugLog(`${endpoint.name} 例外`, error.message);
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
-
-        debugLog(`テスト結果: ${successCount}/${testEndpoints.length} 成功`);
-
-        if (successCount === 0) {
-          updateStatus("disconnected", "API接続エラー");
-          showMessage("すべてのAPIエンドポイントに接続できませんでした。", "error");
-        } else if (difyConnected) {
-          updateStatus("connected", "Dify API接続OK");
-          showMessage("Dify APIに正常に接続されています。", "success");
-        } else {
-          updateStatus("connected", "API接続OK（Dify未確認）");
-          showMessage("基本APIは接続できていますが、Dify接続を確認してください。", "warning");
-        }
-      }
-
-      // ファイル処理
-      async function processFiles() {
-        if (selectedFiles.length === 0) {
-          showMessage("ファイルが選択されていません。", "warning");
-          return;
-        }
-
-        if (isProcessing) return;
-
-        isProcessing = true;
-        processingStartTime = Date.now();
-        debugLog("ファイル処理開始", { fileCount: selectedFiles.length });
-
-        const processBtn = document.getElementById("processBtn");
-        if (processBtn) {
-          processBtn.innerHTML = '<div class="spinner"></div>処理中...';
-          processBtn.disabled = true;
-        }
-
-        try {
-          // ファイル状態を処理中に更新
-          selectedFiles.forEach(file => {
-            file.status = "processing";
-            file.progress = 0;
-          });
-          updateFileList();
-
-          // API呼び出し用のデータを準備
-          const filesData = selectedFiles.map((fileData) => ({
-            name: fileData.name,
-            size: fileData.size,
-            type: fileData.type,
-            data: fileData.data,
-          }));
-
-          debugLog("API呼び出し準備完了", { fileCount: filesData.length });
-
-          const response = await fetch("/api/process", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              files: filesData,
-              timestamp: new Date().toISOString(),
-            }),
-          });
-
-          debugLog(`Process API Response: ${response.status}`);
-
-          if (response.ok) {
-            const data = await response.json();
-            debugLog("Process API Success:", data);
-            
-            // 結果を反映
-            data.results.forEach((result, index) => {
-              if (selectedFiles[index]) {
-                selectedFiles[index].status = result.status;
-                selectedFiles[index].newFilename = result.new_filename;
-                selectedFiles[index].analysis = result.analysis;
-                selectedFiles[index].error = result.error;
-                selectedFiles[index].progress = result.status === "success" ? 100 : 0;
-                
-                // 処理成功時にBase64データを保持
-                if (result.status === "success" && result.fileData) {
-                  selectedFiles[index].processedFileData = result.fileData;
-                  processedFiles.push(selectedFiles[index]);
-                }
-              }
-            });
-            
-            updateFileList();
-            updateStats();
-            showMessage(data.message || "処理が完了しました。", "success");
-          } else {
-            const errorData = await response.json();
-            debugLog("Process API Error:", errorData);
-            
-            // エラー状態に更新
-            selectedFiles.forEach(file => {
-              file.status = "error";
-              file.error = errorData.error || "処理に失敗しました";
-              file.progress = 0;
-            });
-            
-            updateFileList();
-            showMessage(`処理エラー (${response.status}): ${errorData.message || errorData.error}`, "error");
-          }
-        } catch (error) {
-          debugLog("Process error:", error);
-          
-          // エラー状態に更新
-          selectedFiles.forEach(file => {
-            file.status = "error";
-            file.error = error.message;
-            file.progress = 0;
-          });
-          
-          updateFileList();
-          showMessage(`処理中にエラーが発生しました: ${error.message}`, "error");
-        } finally {
-          // UI状態をリセット
-          isProcessing = false;
-          if (processBtn) {
-            processBtn.innerHTML = "ファイルを処理する";
-            processBtn.disabled = selectedFiles.length === 0;
-          }
-          updateStats();
-        }
-      }
-
-      // Base64からファイルダウンロード
-      function downloadFromBase64(base64Data, filename) {
-        try {
-          debugLog(`Base64ダウンロード開始: ${filename}`);
-          
-          // Base64データをBlobに変換
-          const base64Match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-          if (!base64Match) {
-            throw new Error("Invalid base64 data format");
-          }
-          
-          const mimeType = base64Match[1];
-          const base64String = base64Match[2];
-          
-          // Base64をバイナリに変換
-          const byteCharacters = atob(base64String);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          
-          // Blobを作成
-          const blob = new Blob([byteArray], { type: mimeType });
-          
-          // ダウンロードリンクを作成
-          const downloadUrl = URL.createObjectURL(blob);
-          const downloadLink = document.createElement('a');
-          downloadLink.href = downloadUrl;
-          downloadLink.download = filename;
-          downloadLink.style.display = 'none';
-          
-          // DOMに追加してクリック
-          document.body.appendChild(downloadLink);
-          downloadLink.click();
-          
-          // クリーンアップ
-          document.body.removeChild(downloadLink);
-          URL.revokeObjectURL(downloadUrl);
-          
-          debugLog(`ダウンロード完了: ${filename}`);
-          showMessage(`${filename} をダウンロードしました。`, "success");
-          
-        } catch (error) {
-          debugLog(`ダウンロードエラー: ${filename}`, error);
-          showMessage(`ダウンロードに失敗しました: ${error.message}`, "error");
-        }
-      }
-
-      // 単一ファイルダウンロード
-      function downloadFile(fileId) {
-        const file = selectedFiles.find(f => f.id === fileId);
-        if (!file) {
-          showMessage("ファイルが見つかりません。", "error");
-          return;
-        }
-
-        if (file.status !== "success") {
-          showMessage("処理が完了していないファイルはダウンロードできません。", "warning");
-          return;
-        }
-
-        // 処理済みデータがある場合はそれを使用、なければ元データを使用
-        const fileData = file.processedFileData || file.data;
-        const filename = file.newFilename || file.name;
-
-        if (!fileData) {
-          showMessage("ファイルデータが見つかりません。", "error");
-          return;
-        }
-
-        debugLog(`ファイルダウンロード: ${filename}`, { 
-          originalName: file.name, 
-          newName: filename,
-          hasProcessedData: !!file.processedFileData 
-        });
-        
-        downloadFromBase64(fileData, filename);
-      }
-
-      // 全ファイル一括ダウンロード
-      function downloadAllFiles() {
-        const successFiles = processedFiles.filter(f => f.status === "success");
-        
-        if (successFiles.length === 0) {
-          showMessage("ダウンロード可能なファイルがありません。", "warning");
-          return;
-        }
-
-        debugLog(`一括ダウンロード開始: ${successFiles.length}ファイル`);
-        
-        // 順次ダウンロード（ブラウザのダウンロード制限を考慮）
-        successFiles.forEach((file, index) => {
-          setTimeout(() => {
-            downloadFile(file.id);
-          }, index * 1000); // 1秒間隔でダウンロード
-        });
-
-        showMessage(`${successFiles.length}個のファイルのダウンロードを開始しました。`, "success");
-      }
-
-      // アップロードエリアクリック処理
-      function handleUploadClick() {
-        debugLog("アップロードエリアがクリックされました");
-        const fileInput = document.getElementById("fileInput");
-        if (fileInput) {
-          fileInput.click();
-        }
-      }
-
-      // ドラッグ&ドロップ処理
-      function setupDragAndDrop() {
-        const uploadArea = document.getElementById("uploadArea");
-        
-        uploadArea.addEventListener("dragover", (e) => {
-          e.preventDefault();
-          uploadArea.classList.add("dragover");
-        });
-
-        uploadArea.addEventListener("dragleave", (e) => {
-          e.preventDefault();
-          uploadArea.classList.remove("dragover");
-        });
-
-        uploadArea.addEventListener("drop", (e) => {
-          e.preventDefault();
-          uploadArea.classList.remove("dragover");
-
-          const files = Array.from(e.dataTransfer.files);
-          debugLog("ファイルドロップ", { fileCount: files.length });
-
-          const supportedFiles = files.filter(file => {
-            const supportedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml"];
-            return supportedTypes.includes(file.type);
-          });
-
-          if (supportedFiles.length > 0) {
-            addFiles(supportedFiles);
-          } else {
-            showMessage("サポートされているファイル形式をドロップしてください。", "warning");
           }
         });
-      }
 
-      // イベントリスナーの設定
-      function setupEventListeners() {
-        debugLog("イベントリスナー設定開始");
-
-        // ファイル入力
-        const fileInput = document.getElementById("fileInput");
-        if (fileInput) {
-          fileInput.addEventListener("change", handleFileSelect);
-        }
-
-        // アップロードエリア
-        const uploadArea = document.getElementById("uploadArea");
-        if (uploadArea) {
-          uploadArea.addEventListener("click", handleUploadClick);
-        }
-
-        // ドラッグ&ドロップ設定
-        setupDragAndDrop();
-
-        // 処理ボタン
-        const processBtn = document.getElementById("processBtn");
-        if (processBtn) {
-          processBtn.addEventListener("click", processFiles);
-        }
-
-        debugLog("すべてのイベントリスナー設定完了");
-      }
-
-      // 初期化
-      function initialize() {
-        debugLog("アプリケーション初期化開始");
-
-        // 基本的な環境情報を表示
-        debugLog("環境情報", {
-          userAgent: navigator.userAgent,
-          url: window.location.href,
-          timestamp: new Date().toISOString(),
-        });
-
-        // イベントリスナーを設定
-        setupEventListeners();
-
-        // 統計情報初期化
+        processedCount += batch.length;
+        updateFileList();
         updateStats();
 
-        // API接続テストを実行
-        testApiConnection();
+        // バッチ間で少し待機（サーバー負荷軽減）
+        if (batchIndex < totalBatches - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
 
-        debugLog("初期化完了");
+      } catch (batchError) {
+        debugLog(`Batch ${batchIndex + 1} error:`, batchError);
+        
+        // バッチエラー時はそのバッチのファイルをエラー状態に
+        batch.forEach(file => {
+          file.status = "error";
+          file.error = batchError.message;
+          file.progress = 0;
+        });
+        updateFileList();
+
+        // 中断でない場合は続行するか確認
+        if (!batchError.message.includes("aborted")) {
+          const shouldContinue = confirm(
+            `バッチ ${batchIndex + 1} の処理でエラーが発生しました。\n` +
+            `エラー: ${batchError.message}\n\n` +
+            `残りのファイルの処理を続行しますか？`
+          );
+          
+          if (!shouldContinue) {
+            break;
+          }
+        } else {
+          break; // 中断の場合は処理停止
+        }
+      }
+    }
+
+    const successCount = selectedFiles.filter(f => f.status === "success").length;
+    const errorCount = selectedFiles.filter(f => f.status === "error").length;
+    
+    showMessage(
+      `処理完了: 成功 ${successCount}件、エラー ${errorCount}件`,
+      successCount > 0 ? "success" : "warning"
+    );
+
+  } catch (error) {
+    debugLog("Processing error:", error);
+    
+    // 全体エラー時の処理
+    selectedFiles.forEach(file => {
+      if (file.status === "processing") {
+        file.status = "error";
+        file.error = error.message;
+        file.progress = 0;
+      }
+    });
+    
+    updateFileList();
+    
+    if (error.message.includes("aborted")) {
+      showMessage("処理が中断されました。", "warning");
+    } else {
+      showMessage(`処理中にエラーが発生しました: ${error.message}`, "error");
+    }
+  } finally {
+    // UI状態をリセット
+    isProcessing = false;
+    processingAbortController = null;
+    
+    if (processBtn) {
+      processBtn.innerHTML = "ファイルを処理する";
+      processBtn.disabled = selectedFiles.length === 0;
+      processBtn.onclick = processFiles; // 元のハンドラーに戻す
+    }
+    updateStats();
+  }
+}
+
+// ファイルリスト更新（プログレス表示改善）
+function updateFileList() {
+  debugLog("ファイルリスト更新", { fileCount: selectedFiles.length });
+
+  const fileList = document.getElementById("selectedFiles");
+  const processBtn = document.getElementById("processBtn");
+
+  if (!fileList || !processBtn) return;
+
+  if (selectedFiles.length === 0) {
+    fileList.innerHTML = "";
+    processBtn.disabled = true;
+    return;
+  }
+
+  // 処理中の場合は中断ボタンとして表示
+  if (isProcessing) {
+    processBtn.innerHTML = '<div class="spinner"></div>処理中... <small>(クリックで中断)</small>';
+    processBtn.disabled = false;
+    processBtn.onclick = abortProcessing;
+  } else {
+    processBtn.innerHTML = "ファイルを処理する";
+    processBtn.disabled = false;
+    processBtn.onclick = processFiles;
+  }
+
+  fileList.innerHTML = selectedFiles
+    .map((fileData) => {
+      let statusClass = "";
+      let statusText = "";
+      let progressBar = "";
+      let actions = "";
+
+      switch (fileData.status) {
+        case "pending":
+          statusClass = "";
+          statusText = "待機中";
+          actions = `<button class="btn btn-remove" onclick="removeFile('${fileData.id}')" ${isProcessing ? "disabled" : ""}>削除</button>`;
+          break;
+        case "processing":
+          statusClass = "processing";
+          statusText = `処理中... ${fileData.progress}%`;
+          progressBar = `
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${fileData.progress}%"></div>
+            </div>
+          `;
+          break;
+        case "success":
+          statusClass = "success";
+          statusText = `✅ 完了: ${fileData.newFilename}`;
+          actions = `<button class="btn btn-download" onclick="downloadFile('${fileData.id}')">ダウンロード</button>`;
+          break;
+        case "error":
+          statusClass = "error";
+          statusText = `❌ エラー: ${fileData.error}`;
+          actions = `<button class="btn btn-remove" onclick="removeFile('${fileData.id}')">削除</button>`;
+          break;
       }
 
-      // DOMが読み込まれた後に初期化
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", initialize);
+      return `
+        <div class="file-item ${statusClass}">
+          <div class="file-info">
+            <div class="file-icon">📄</div>
+            <div class="file-details">
+              <div class="file-name">${fileData.name}</div>
+              <div class="file-size">${formatFileSize(fileData.size)}</div>
+              <div class="file-status">${statusText}</div>
+              ${progressBar}
+            </div>
+          </div>
+          <div class="file-actions">
+            ${actions}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+// ファイルサイズフォーマット
+function formatFileSize(bytes) {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+}
+
+// API接続テスト
+async function testApiConnection() {
+  const testEndpoints = [
+    { url: "/api/hello", name: "Hello API" },
+    { url: "/api/health", name: "Health Check" },
+    { url: "/api/test-dify", name: "Dify Connection Test" },
+  ];
+
+  debugLog("API接続テスト開始");
+  updateStatus("checking", "接続テスト中...");
+
+  let successCount = 0;
+  let difyConnected = false;
+
+  for (const endpoint of testEndpoints) {
+    try {
+      debugLog(`テスト開始: ${endpoint.name} (${endpoint.url})`);
+
+      const response = await fetch(endpoint.url, {
+        method: "GET",
+        cache: "no-cache",
+        headers: { Accept: "application/json" },
+      });
+
+      debugLog(`${endpoint.name} レスポンス: ${response.status} ${response.statusText}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        debugLog(`${endpoint.name} 成功`, data);
+        successCount++;
+
+        if (endpoint.url === "/api/test-dify" && data.dify_connection === "connected") {
+          difyConnected = true;
+        }
       } else {
-        initialize();
+        const errorText = await response.text();
+        debugLog(`${endpoint.name} エラー`, errorText);
       }
+    } catch (error) {
+      debugLog(`${endpoint.name} 例外`, error.message);
+    }
 
-      // エラーハンドリング
-      window.addEventListener("error", (event) => {
-        debugLog("グローバルエラー", {
-          message: event.message,
-          filename: event.filename,
-          lineno: event.lineno,
-          colno: event.colno,
-          error: event.error?.toString(),
-        });
-      });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
 
-      // 未処理のPromise rejectionをキャッチ
-      window.addEventListener("unhandledrejection", (event) => {
-        debugLog("未処理のPromise rejection", {
-          reason: event.reason?.toString(),
-          promise: event.promise,
-        });
-      });
+  debugLog(`テスト結果: ${successCount}/${testEndpoints.length} 成功`);
+
+  if (successCount === 0) {
+    updateStatus("disconnected", "API接続エラー");
+    showMessage("すべてのAPIエンドポイントに接続できませんでした。", "error");
+  } else if (difyConnected) {
+    updateStatus("connected", "Dify API接続OK");
+    showMessage("Dify APIに正常に接続されています。", "success");
+  } else {
+    updateStatus("connected", "API接続OK（Dify未確認）");
+    showMessage("基本APIは接続できていますが、Dify接続を確認してください。", "warning");
+  }
+}
+
+// Base64からファイルダウンロード
+function downloadFromBase64(base64Data, filename) {
+  try {
+    debugLog(`Base64ダウンロード開始: ${filename}`);
+    
+    // Base64データをBlobに変換
+    const base64Match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+    if (!base64Match) {
+      throw new Error("Invalid base64 data format");
+    }
+    
+    const mimeType = base64Match[1];
+    const base64String = base64Match[2];
+    
+    // Base64をバイナリに変換
+    const byteCharacters = atob(base64String);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    
+    // Blobを作成
+    const blob = new Blob([byteArray], { type: mimeType });
+    
+    // ダウンロードリンクを作成
+    const downloadUrl = URL.createObjectURL(blob);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = downloadUrl;
+    downloadLink.download = filename;
+    downloadLink.style.display = 'none';
+    
+    // DOMに追加してクリック
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    
+    // クリーンアップ
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(downloadUrl);
+    
+    debugLog(`ダウンロード完了: ${filename}`);
+    showMessage(`${filename} をダウンロードしました。`, "success");
+    
+  } catch (error) {
+    debugLog(`ダウンロードエラー: ${filename}`, error);
+    showMessage(`ダウンロードに失敗しました: ${error.message}`, "error");
+  }
+}
+
+// 単一ファイルダウンロード
+function downloadFile(fileId) {
+  const file = selectedFiles.find(f => f.id === fileId);
+  if (!file) {
+    showMessage("ファイルが見つかりません。", "error");
+    return;
+  }
+
+  if (file.status !== "success") {
+    showMessage("処理が完了していないファイルはダウンロードできません。", "warning");
+    return;
+  }
+
+  // 処理済みデータがある場合はそれを使用、なければ元データを使用
+  const fileData = file.processedFileData || file.data;
+  const filename = file.newFilename || file.name;
+
+  if (!fileData) {
+    showMessage("ファイルデータが見つかりません。", "error");
+    return;
+  }
+
+  debugLog(`ファイルダウンロード: ${filename}`, { 
+    originalName: file.name, 
+    newName: filename,
+    hasProcessedData: !!file.processedFileData 
+  });
+  
+  downloadFromBase64(fileData, filename);
+}
+
+// 全ファイル一括ダウンロード
+function downloadAllFiles() {
+  const successFiles = processedFiles.filter(f => f.status === "success");
+  
+  if (successFiles.length === 0) {
+    showMessage("ダウンロード可能なファイルがありません。", "warning");
+    return;
+  }
+
+  debugLog(`一括ダウンロード開始: ${successFiles.length}ファイル`);
+  
+  // 順次ダウンロード（ブラウザのダウンロード制限を考慮）
+  successFiles.forEach((file, index) => {
+    setTimeout(() => {
+      downloadFile(file.id);
+    }, index * 1000); // 1秒間隔でダウンロード
+  });
+
+  showMessage(`${successFiles.length}個のファイルのダウンロードを開始しました。`, "success");
+}
+
+// アップロードエリアクリック処理
+function handleUploadClick() {
+  debugLog("アップロードエリアがクリックされました");
+  const fileInput = document.getElementById("fileInput");
+  if (fileInput) {
+    fileInput.click();
+  }
+}
+
+// ドラッグ&ドロップ処理
+function setupDragAndDrop() {
+  const uploadArea = document.getElementById("uploadArea");
+  
+  uploadArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploadArea.classList.add("dragover");
+  });
+
+  uploadArea.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove("dragover");
+  });
+
+  uploadArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove("dragover");
+
+    const files = Array.from(e.dataTransfer.files);
+    debugLog("ファイルドロップ", { fileCount: files.length });
+
+    const supportedFiles = files.filter(file => {
+      const supportedTypes = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
+      return supportedTypes.includes(file.type);
+    });
+
+    if (supportedFiles.length > 0) {
+      addFiles(supportedFiles);
+    } else {
+      showMessage("サポートされているファイル形式をドロップしてください（PDF、JPEG、PNG）。", "warning");
+    }
+  });
+}
+
+// イベントリスナーの設定
+function setupEventListeners() {
+  debugLog("イベントリスナー設定開始");
+
+  // ファイル入力
+  const fileInput = document.getElementById("fileInput");
+  if (fileInput) {
+    fileInput.addEventListener("change", handleFileSelect);
+  }
+
+  // アップロードエリア
+  const uploadArea = document.getElementById("uploadArea");
+  if (uploadArea) {
+    uploadArea.addEventListener("click", handleUploadClick);
+  }
+
+  // ドラッグ&ドロップ設定
+  setupDragAndDrop();
+
+  // 処理ボタン
+  const processBtn = document.getElementById("processBtn");
+  if (processBtn) {
+    processBtn.addEventListener("click", processFiles);
+  }
+
+  debugLog("すべてのイベントリスナー設定完了");
+}
+
+// 初期化
+function initialize() {
+  debugLog("アプリケーション初期化開始");
+
+  // 基本的な環境情報を表示
+  debugLog("環境情報", {
+    userAgent: navigator.userAgent,
+    url: window.location.href,
+    timestamp: new Date().toISOString(),
+  });
+
+  // イベントリスナーを設定
+  setupEventListeners();
+
+  // 統計情報初期化
+  updateStats();
+
+  // API接続テストを実行
+  testApiConnection();
+
+  debugLog("初期化完了");
+}
+
+// DOMが読み込まれた後に初期化
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initialize);
+} else {
+  initialize();
+}
+
+// エラーハンドリング
+window.addEventListener("error", (event) => {
+  debugLog("グローバルエラー", {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    error: event.error?.toString(),
+  });
+});
+
+// 未処理のPromise rejectionをキャッチ
+window.addEventListener("unhandledrejection", (event) => {
+  debugLog("未処理のPromise rejection", {
+    reason: event.reason?.toString(),
+    promise: event.promise,
+  });
+});
     </script>
   </body>
 </html>
